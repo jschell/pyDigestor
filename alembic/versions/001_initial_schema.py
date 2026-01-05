@@ -30,7 +30,7 @@ def upgrade() -> None:
         sa.Column('published_at', sa.DateTime(), nullable=True),
         sa.Column('fetched_at', sa.DateTime(), nullable=False),
         sa.Column('status', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column('meta', postgresql.JSON(astext_type=sa.Text()), nullable=False),
+        sa.Column('meta', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('source_id')
     )
@@ -59,7 +59,7 @@ def upgrade() -> None:
         sa.Column('signal_type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('content', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('confidence', sa.Float(), nullable=True),
-        sa.Column('meta', postgresql.JSON(astext_type=sa.Text()), nullable=False),
+        sa.Column('meta', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(['article_id'], ['articles.id'], ),
         sa.PrimaryKeyConstraint('id')
