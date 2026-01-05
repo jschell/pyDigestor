@@ -30,12 +30,12 @@ def upgrade() -> None:
         sa.Column('published_at', sa.DateTime(), nullable=True),
         sa.Column('fetched_at', sa.DateTime(), nullable=False),
         sa.Column('status', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column('metadata', postgresql.JSON(astext_type=sa.Text()), nullable=False),
+        sa.Column('meta', postgresql.JSON(astext_type=sa.Text()), nullable=False),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('source_id')
     )
     op.create_index(op.f('ix_articles_source_id'), 'articles', ['source_id'], unique=False)
-    op.create_index('ix_articles_metadata', 'articles', ['metadata'], postgresql_using='gin')
+    op.create_index('ix_articles_meta', 'articles', ['meta'], postgresql_using='gin')
 
     # Create triage_decisions table
     op.create_table(
@@ -59,7 +59,7 @@ def upgrade() -> None:
         sa.Column('signal_type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('content', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column('confidence', sa.Float(), nullable=True),
-        sa.Column('metadata', postgresql.JSON(astext_type=sa.Text()), nullable=False),
+        sa.Column('meta', postgresql.JSON(astext_type=sa.Text()), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(['article_id'], ['articles.id'], ),
         sa.PrimaryKeyConstraint('id')

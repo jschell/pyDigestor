@@ -24,7 +24,7 @@ class Article(SQLModel, table=True):
         default="pending",
         description="Processing status: pending, triaged, processed, failed",
     )
-    metadata: dict[str, Any] = Field(
+    meta: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSON),
         description="Feed source, Reddit score, extraction method, etc.",
@@ -67,7 +67,7 @@ class Signal(SQLModel, table=True):
     confidence: float | None = Field(
         default=None, description="Confidence score (0-1)", ge=0, le=1
     )
-    metadata: dict[str, Any] = Field(
+    meta: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSON),
         description="Additional signal metadata",

@@ -22,20 +22,20 @@ def test_article_model_creation():
     assert article.status == "pending"  # Default value
     assert isinstance(article.id, UUID)
     assert isinstance(article.fetched_at, datetime)
-    assert article.metadata == {}  # Default empty dict
+    assert article.meta == {}  # Default empty dict
 
 
-def test_article_with_metadata():
-    """Test Article model stores metadata correctly."""
+def test_article_with_meta():
+    """Test Article model stores meta correctly."""
     article = Article(
         source_id="test-456",
         url="https://example.com",
         title="Test",
-        metadata={"source_type": "rss", "feed_url": "https://example.com/feed/"},
+        meta={"source_type": "rss", "feed_url": "https://example.com/feed/"},
     )
 
-    assert article.metadata["source_type"] == "rss"
-    assert article.metadata["feed_url"] == "https://example.com/feed/"
+    assert article.meta["source_type"] == "rss"
+    assert article.meta["feed_url"] == "https://example.com/feed/"
 
 
 def test_article_database_insert(session, sample_article):
@@ -47,7 +47,7 @@ def test_article_database_insert(session, sample_article):
     article = session.query(Article).filter(Article.source_id == "test-article-123").first()
     assert article is not None
     assert article.title == "Test Security Article"
-    assert article.metadata["source_type"] == "rss"
+    assert article.meta["source_type"] == "rss"
 
 
 def test_signal_model_creation(sample_article):

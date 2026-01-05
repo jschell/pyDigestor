@@ -38,7 +38,7 @@ def sample_article_fixture():
         content="This is test content about a security vulnerability.",
         published_at=datetime(2026, 1, 5, 12, 0, 0),
         status="pending",
-        metadata={
+        meta={
             "source_type": "rss",
             "feed_url": "https://example.com/feed/",
         },
@@ -53,7 +53,7 @@ def sample_signal_fixture(sample_article):
         signal_type="vulnerability",
         content="CVE-2026-0001: Remote code execution in Example Software",
         confidence=0.95,
-        metadata={"severity": "critical", "cvss": 9.8},
+        meta={"severity": "critical", "cvss": 9.8},
     )
 
 
