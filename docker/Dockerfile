@@ -20,7 +20,7 @@ COPY alembic ./alembic
 COPY alembic.ini .
 
 # Install dependencies with uv
-RUN uv sync --frozen
+RUN uv sync
 
 # Copy entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh
