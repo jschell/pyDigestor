@@ -1,5 +1,10 @@
 """Command-line interface for pyDigestor."""
 
+import warnings
+
+# Suppress SyntaxWarnings from newspaper3k library
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
 import typer
 from rich.console import Console
 from rich.table import Table

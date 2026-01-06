@@ -4,12 +4,11 @@ from typing import Optional
 import time
 import warnings
 
+# Suppress SyntaxWarnings from newspaper3k library (must be before import)
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
 import httpx
 import trafilatura
-
-# Suppress SyntaxWarnings from newspaper3k library
-warnings.filterwarnings("ignore", category=SyntaxWarning, module="newspaper")
-
 from newspaper import Article as NewspaperArticle
 from rich.console import Console
 
