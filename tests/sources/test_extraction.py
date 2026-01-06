@@ -172,9 +172,10 @@ class TestContentExtractor:
         assert extractor.metrics["total_attempts"] == 0
         assert extractor.metrics["trafilatura_success"] == 0
 
+    @patch("pydigestor.sources.extraction.NewspaperArticle")
     @patch("pydigestor.sources.extraction.httpx.get")
     @patch("pydigestor.sources.extraction.trafilatura.extract")
-    def test_multiple_extractions(self, mock_trafilatura, mock_get):
+    def test_multiple_extractions(self, mock_trafilatura, mock_get, mock_newspaper):
         """Test multiple extractions update metrics correctly."""
         # Mock HTTP response
         mock_response = Mock()
@@ -184,6 +185,11 @@ class TestContentExtractor:
 
         # Mock trafilatura to succeed
         mock_trafilatura.return_value = "This is a long article content that is definitely more than 100 characters to pass validation."
+
+        # Mock newspaper3k (shouldn't be called, but prevent real HTTP)
+        mock_article = Mock()
+        mock_article.text = "Fallback content"
+        mock_newspaper.return_value = mock_article
 
         extractor = ContentExtractor()
 
