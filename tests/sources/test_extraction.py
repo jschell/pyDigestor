@@ -180,24 +180,27 @@ class TestContentExtractor:
         # Mock HTTP response
         mock_response = Mock()
         mock_response.content = b"<html>Content</html>"
+        mock_response.text = "<html>Content</html>"
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
-        # Mock trafilatura to succeed
-        mock_trafilatura.return_value = "This is a long article content that is definitely more than 100 characters to pass validation."
+        # Mock trafilatura to succeed - must return content > 100 chars (exactly 101 chars for clarity)
+        expected_content = "This is a long article content that is definitely more than one hundred characters long to pass validation successfully!"
+        mock_trafilatura.return_value = expected_content
 
         # Mock newspaper3k (shouldn't be called, but prevent real HTTP)
         mock_article = Mock()
-        mock_article.text = "Fallback content"
+        mock_article.text = "Fallback content that is also more than 100 characters to pass validation checks."
         mock_newspaper.return_value = mock_article
 
         extractor = ContentExtractor()
 
-        # Extract from multiple URLs
+        # Extract from multiple URLs (non-Medium to avoid BeautifulSoup complexity)
         extractor.extract("https://example.com/article1")
         extractor.extract("https://example.com/article2")
         extractor.extract("https://example.com/article3")
 
+        # All extractions should succeed
         assert extractor.metrics["total_attempts"] == 3
         assert extractor.metrics["trafilatura_success"] == 3
         assert extractor.metrics["failures"] == 0
