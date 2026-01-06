@@ -138,7 +138,7 @@ class TestIngestStep:
         settings = Settings(rss_feeds=["https://example.com/feed"])
         step = IngestStep(settings=settings)
 
-        stats = step.run()
+        stats = step.run(session=session)
 
         # Verify stats
         assert stats["total_fetched"] == 2
@@ -189,7 +189,7 @@ class TestIngestStep:
         settings = Settings(rss_feeds=["https://example.com/feed"])
         step = IngestStep(settings=settings)
 
-        stats = step.run()
+        stats = step.run(session=session)
 
         # Verify stats
         assert stats["total_fetched"] == 2
@@ -214,7 +214,7 @@ class TestIngestStep:
         settings = Settings(rss_feeds=["https://example.com/feed"])
         step = IngestStep(settings=settings)
 
-        stats = step.run()
+        stats = step.run(session=session)
 
         # Verify stats
         assert stats["total_fetched"] == 0
@@ -265,7 +265,7 @@ class TestIngestStep:
         )
         step = IngestStep(settings=settings)
 
-        stats = step.run()
+        stats = step.run(session=session)
 
         # Verify stats
         assert stats["total_fetched"] == 2

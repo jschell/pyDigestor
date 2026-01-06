@@ -27,9 +27,12 @@ class IngestStep:
         """
         self.settings = settings or Settings()
 
-    def run(self) -> dict:
+    def run(self, session: Optional[Session] = None) -> dict:
         """
         Run the ingest step: fetch all configured feeds and store new articles.
+
+        Args:
+            session: Optional database session (for testing). If not provided, creates a new session.
 
         Returns:
             Dictionary with statistics:
@@ -63,13 +66,19 @@ class IngestStep:
 
         # Store entries in database
         if all_entries:
-            session = next(get_session())
-            for entry in all_entries:
-                if self._store_article(session, entry):
-                    stats["new_articles"] += 1
-                else:
-                    stats["duplicates"] += 1
-            session.close()
+            # Use provided session or create new one
+            db_session = session or next(get_session())
+            should_close = session is None  # Only close if we created it
+
+            try:
+                for entry in all_entries:
+                    if self._store_article(db_session, entry):
+                        stats["new_articles"] += 1
+                    else:
+                        stats["duplicates"] += 1
+            finally:
+                if should_close:
+                    db_session.close()
 
         # Display results
         self._display_results(stats)
