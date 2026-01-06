@@ -7,6 +7,7 @@ from rich.table import Table
 from pydigestor.config import settings
 from pydigestor.database import get_session
 from pydigestor.models import Article, Signal, TriageDecision
+from pydigestor.steps.ingest import IngestStep
 
 app = typer.Typer(
     name="pydigestor",
@@ -110,6 +111,23 @@ def config():
 
     console.print(table)
     console.print()
+
+
+@app.command()
+def ingest():
+    """Fetch RSS/Atom feeds and store new articles in database."""
+    try:
+        step = IngestStep()
+        stats = step.run()
+
+        # Exit with error if there were issues
+        if stats["errors"] > 0 and stats["new_articles"] == 0:
+            console.print("[yellow]⚠[/yellow] Some feeds failed and no articles were stored")
+            raise typer.Exit(code=1)
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
