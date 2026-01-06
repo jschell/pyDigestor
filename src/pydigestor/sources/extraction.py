@@ -98,13 +98,19 @@ class ContentExtractor:
                 "DNT": "1",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "cross-site",
             }
 
-            # For Medium URLs, try mobile endpoint first
+            # For Medium URLs, add session-like cookies and use mobile endpoint
             fetch_url = url
             if "medium.com" in url.lower():
                 # Convert to mobile endpoint: medium.com/... -> medium.com/m/...
                 fetch_url = url.replace("medium.com/", "medium.com/m/", 1)
+
+                # Add session-like cookies to appear as logged-in user
+                headers["Cookie"] = "uid=lo_123456789; sid=1:abc123def456; _ga=GA1.2.123456789.1234567890"
 
             # Download content with timeout
             response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
