@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import UUID
 
 from rich.console import Console
 from rich.table import Table
@@ -119,6 +120,7 @@ class IngestStep:
             )
 
         # Store entries in database
+        new_article_ids: list[UUID] = []
         if all_entries:
             # Use provided session or create new one
             db_session = session or next(get_session())
@@ -126,10 +128,17 @@ class IngestStep:
 
             try:
                 for entry in all_entries:
-                    if self._store_article(db_session, entry):
+                    article_id = self._store_article(db_session, entry)
+                    if article_id:
                         stats["new_articles"] += 1
+                        new_article_ids.append(article_id)
                     else:
                         stats["duplicates"] += 1
+
+                # Auto-generate summaries for new articles if enabled
+                if self.settings.auto_summarize and new_article_ids:
+                    self._auto_summarize(db_session, new_article_ids)
+
             finally:
                 if should_close:
                     db_session.close()
@@ -139,7 +148,7 @@ class IngestStep:
 
         return stats
 
-    def _store_article(self, session: Session, entry: FeedEntry) -> bool:
+    def _store_article(self, session: Session, entry: FeedEntry) -> UUID | None:
         """
         Store a feed entry as an article in the database.
 
@@ -148,7 +157,7 @@ class IngestStep:
             entry: Feed entry to store
 
         Returns:
-            True if article was stored (new), False if duplicate
+            Article ID if article was stored (new), None if duplicate
         """
         # Check if article already exists
         existing = session.exec(
@@ -156,7 +165,7 @@ class IngestStep:
         ).first()
 
         if existing:
-            return False  # Duplicate
+            return None  # Duplicate
 
         # Create new article
         article = Article(
@@ -176,9 +185,58 @@ class IngestStep:
 
         session.add(article)
         session.commit()
+        session.refresh(article)  # Get the generated ID
         console.print(f"[green]✓[/green] Stored: {entry.title[:60]}...")
 
-        return True
+        return article.id
+
+    def _auto_summarize(self, session: Session, article_ids: list[UUID]) -> None:
+        """
+        Auto-generate summaries for newly ingested articles.
+
+        Args:
+            session: Database session
+            article_ids: List of article IDs to summarize
+        """
+        from pydigestor.steps.summarize import SummarizationStep
+
+        console.print(f"\n[blue]Auto-summarizing {len(article_ids)} new article(s)...[/blue]")
+
+        # Get articles with content that need summarization
+        articles = session.exec(
+            select(Article)
+            .where(Article.id.in_(article_ids))
+            .where(Article.content.is_not(None))
+            .where((Article.summary.is_(None)) | (Article.summary == ""))
+        ).all()
+
+        if not articles:
+            console.print("[dim]No articles need summarization.[/dim]")
+            return
+
+        # Create summarizer and generate summaries
+        summarizer = SummarizationStep()
+        summarized_count = 0
+
+        for article in articles:
+            # Skip if content is too short
+            if len(article.content.strip()) < 200:
+                continue
+
+            # Generate summary
+            summary = summarizer._generate_summary(article.content)
+            if summary:
+                article.summary = summary
+                session.add(article)
+                summarized_count += 1
+
+        # Commit all summaries
+        session.commit()
+
+        if summarized_count > 0:
+            console.print(
+                f"[green]✓[/green] Auto-summarized {summarized_count} article(s)"
+            )
 
     def _display_results(self, stats: dict) -> None:
         """Display ingest results in a table."""

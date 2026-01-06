@@ -13,6 +13,7 @@ from pydigestor.config import settings
 from pydigestor.database import get_session
 from pydigestor.models import Article, Signal, TriageDecision
 from pydigestor.steps.ingest import IngestStep
+from pydigestor.steps.summarize import SummarizationStep
 
 app = typer.Typer(
     name="pydigestor",
@@ -65,6 +66,7 @@ def status():
         config_table.add_row("Reddit Subreddits", str(len(settings.reddit_subreddits)))
         config_table.add_row("Triage Enabled", "✓" if settings.enable_triage else "✗")
         config_table.add_row("Extraction Enabled", "✓" if settings.enable_extraction else "✗")
+        config_table.add_row("Auto-Summarize", "✓" if settings.auto_summarize else "✗")
         config_table.add_row("Summarization Method", settings.summarization_method)
 
         console.print(config_table)
@@ -103,6 +105,7 @@ def config():
     table.add_row("Reddit Subreddits", ", ".join(settings.reddit_subreddits))
 
     # Summarization
+    table.add_row("Auto-Summarize", str(settings.auto_summarize))
     table.add_row("Summarization Method", settings.summarization_method)
     table.add_row("Summary Sentences", f"{settings.summary_min_sentences}-{settings.summary_max_sentences}")
 
@@ -135,6 +138,30 @@ def ingest(
         # Exit with error if there were issues
         if stats["errors"] > 0 and stats["new_articles"] == 0:
             console.print("[yellow]⚠[/yellow] Some feeds failed and no articles were stored")
+            raise typer.Exit(code=1)
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def summarize(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Regenerate summaries for all articles (not just those missing summaries)"
+    )
+):
+    """Generate extractive summaries for articles using local algorithms."""
+    try:
+        step = SummarizationStep()
+        metrics = step.run(force=force)
+
+        # Exit with error if nothing was summarized and there were errors
+        if metrics["summarized"] == 0 and metrics["errors"] > 0:
+            console.print("[yellow]⚠[/yellow] No articles were summarized and errors occurred")
             raise typer.Exit(code=1)
 
     except Exception as e:
