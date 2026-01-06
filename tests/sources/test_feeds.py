@@ -87,7 +87,9 @@ class TestFeedEntry:
         assert entry is not None
         assert entry.url == "https://example.com/article"
         assert entry.title == "Test Article"
-        assert entry.summary == "Test summary"
+        # When there's only a summary (no content field), it goes into content
+        assert entry.content == "Test summary"
+        assert entry.summary is None  # No separate summary when only summary field exists
         assert entry.author == "John Doe"
 
     def test_from_feedparser_missing_link(self):

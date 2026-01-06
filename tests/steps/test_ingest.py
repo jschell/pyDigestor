@@ -28,7 +28,7 @@ class TestIngestStep:
 
         assert step.settings == settings
 
-    def test_store_article_new(self, db_session):
+    def test_store_article_new(self, session):
         """Test storing a new article."""
         step = IngestStep()
 
@@ -44,13 +44,13 @@ class TestIngestStep:
         )
 
         # Store article
-        result = step._store_article(db_session, entry)
+        result = step._store_article(session, entry)
 
         # Should return True (new article)
         assert result is True
 
         # Verify article in database
-        article = db_session.exec(
+        article = session.exec(
             select(Article).where(Article.source_id == "rss:example.com:abc123")
         ).first()
 
@@ -63,7 +63,7 @@ class TestIngestStep:
         assert article.meta["author"] == "John Doe"
         assert article.meta["tags"] == ["security", "test"]
 
-    def test_store_article_duplicate(self, db_session):
+    def test_store_article_duplicate(self, session):
         """Test that duplicate articles are skipped."""
         step = IngestStep()
 
@@ -75,21 +75,21 @@ class TestIngestStep:
         )
 
         # Store article first time
-        result1 = step._store_article(db_session, entry)
+        result1 = step._store_article(session, entry)
         assert result1 is True
 
         # Try to store again (duplicate)
-        result2 = step._store_article(db_session, entry)
+        result2 = step._store_article(session, entry)
         assert result2 is False
 
         # Verify only one article in database
-        articles = db_session.exec(
+        articles = session.exec(
             select(Article).where(Article.source_id == "rss:example.com:abc123")
         ).all()
 
         assert len(articles) == 1
 
-    def test_store_article_no_content(self, db_session):
+    def test_store_article_no_content(self, session):
         """Test storing article with no content."""
         step = IngestStep()
 
@@ -100,11 +100,11 @@ class TestIngestStep:
             content=None,  # No content
         )
 
-        result = step._store_article(db_session, entry)
+        result = step._store_article(session, entry)
 
         assert result is True
 
-        article = db_session.exec(
+        article = session.exec(
             select(Article).where(Article.source_id == "rss:example.com:abc123")
         ).first()
 
@@ -112,7 +112,7 @@ class TestIngestStep:
         assert article.content == ""
 
     @patch("pydigestor.steps.ingest.RSSFeedSource")
-    def test_run_success(self, mock_source_class, db_session):
+    def test_run_success(self, mock_source_class, session):
         """Test successful ingest run."""
         # Mock RSSFeedSource
         mock_source = Mock()
@@ -147,11 +147,11 @@ class TestIngestStep:
         assert stats["errors"] == 0
 
         # Verify articles in database
-        articles = db_session.exec(select(Article)).all()
+        articles = session.exec(select(Article)).all()
         assert len(articles) == 2
 
     @patch("pydigestor.steps.ingest.RSSFeedSource")
-    def test_run_with_duplicates(self, mock_source_class, db_session):
+    def test_run_with_duplicates(self, mock_source_class, session):
         """Test ingest run with duplicate detection."""
         # Pre-populate database with one article
         existing = Article(
@@ -162,8 +162,8 @@ class TestIngestStep:
             fetched_at=datetime.now(timezone.utc),
             status="pending",
         )
-        db_session.add(existing)
-        db_session.commit()
+        session.add(existing)
+        session.commit()
 
         # Mock RSSFeedSource with one duplicate and one new
         mock_source = Mock()
@@ -198,7 +198,7 @@ class TestIngestStep:
         assert stats["errors"] == 0
 
         # Verify total articles in database
-        articles = db_session.exec(select(Article)).all()
+        articles = session.exec(select(Article)).all()
         assert len(articles) == 2  # Original + 1 new
 
     @patch("pydigestor.steps.ingest.RSSFeedSource")
@@ -223,7 +223,7 @@ class TestIngestStep:
         assert stats["errors"] == 1
 
     @patch("pydigestor.steps.ingest.RSSFeedSource")
-    def test_run_multiple_feeds(self, mock_source_class, db_session):
+    def test_run_multiple_feeds(self, mock_source_class, session):
         """Test ingest run with multiple feeds."""
         # Mock RSSFeedSource to return different entries per feed
         def mock_fetch_side_effect(*args, **kwargs):
@@ -273,5 +273,5 @@ class TestIngestStep:
         assert stats["errors"] == 0
 
         # Verify both articles in database
-        articles = db_session.exec(select(Article)).all()
+        articles = session.exec(select(Article)).all()
         assert len(articles) == 2
