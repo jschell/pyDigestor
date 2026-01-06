@@ -202,7 +202,7 @@ class TestIngestStep:
         assert len(articles) == 2  # Original + 1 new
 
     @patch("pydigestor.steps.ingest.RSSFeedSource")
-    def test_run_with_errors(self, mock_source_class):
+    def test_run_with_errors(self, mock_source_class, session):
         """Test ingest run with feed errors."""
         # Mock RSSFeedSource to raise error
         mock_source = Mock()
