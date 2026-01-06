@@ -1,5 +1,6 @@
 """Tests for ingest step."""
 
+import time
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
@@ -273,5 +274,163 @@ class TestIngestStep:
         assert stats["errors"] == 0
 
         # Verify both articles in database
+        articles = session.exec(select(Article)).all()
+        assert len(articles) == 2
+
+    @patch("pydigestor.steps.ingest.RedditFetcher")
+    def test_run_with_reddit(self, mock_fetcher_class, session):
+        """Test ingest run with Reddit subreddits."""
+        # Mock RedditFetcher
+        mock_fetcher = Mock()
+        mock_entries = [
+            FeedEntry(
+                source_id="reddit:netsec:abc123",
+                url="https://example.com/article",
+                title="Reddit Post",
+                content="",
+                tags=["r/netsec"],
+                author="u/testuser",
+            )
+        ]
+        mock_fetcher.fetch_subreddit.return_value = mock_entries
+        mock_fetcher_class.return_value = mock_fetcher
+
+        # Run ingest with Reddit only (no RSS feeds)
+        from pydigestor.config import Settings
+        settings = Settings(rss_feeds=[], reddit_subreddits=["netsec"])
+        step = IngestStep(settings=settings)
+
+        stats = step.run(session=session)
+
+        # Verify stats
+        assert stats["total_fetched"] == 1
+        assert stats["new_articles"] == 1
+        assert stats["errors"] == 0
+
+        # Verify article in database
+        article = session.exec(
+            select(Article).where(Article.source_id == "reddit:netsec:abc123")
+        ).first()
+        assert article is not None
+        assert article.title == "Reddit Post"
+        assert article.meta["tags"] == ["r/netsec"]
+        assert article.meta["author"] == "u/testuser"
+
+    @patch("pydigestor.steps.ingest.RedditFetcher")
+    @patch("pydigestor.steps.ingest.RSSFeedSource")
+    def test_run_with_rss_and_reddit(self, mock_rss_class, mock_fetcher_class, session):
+        """Test ingest run with both RSS and Reddit sources."""
+        # Mock RSSFeedSource
+        mock_rss = Mock()
+        mock_rss.fetch.return_value = [
+            FeedEntry(
+                source_id="rss:example.com:abc123",
+                url="https://example.com/rss-article",
+                title="RSS Article",
+                content="RSS content",
+            )
+        ]
+        mock_rss_class.return_value = mock_rss
+
+        # Mock RedditFetcher
+        mock_fetcher = Mock()
+        mock_fetcher.fetch_subreddit.return_value = [
+            FeedEntry(
+                source_id="reddit:netsec:def456",
+                url="https://example.com/reddit-article",
+                title="Reddit Article",
+                content="",
+                tags=["r/netsec"],
+            )
+        ]
+        mock_fetcher_class.return_value = mock_fetcher
+
+        # Run ingest with both sources
+        from pydigestor.config import Settings
+        settings = Settings(
+            rss_feeds=["https://example.com/feed"],
+            reddit_subreddits=["netsec"]
+        )
+        step = IngestStep(settings=settings)
+
+        stats = step.run(session=session)
+
+        # Verify stats
+        assert stats["total_fetched"] == 2
+        assert stats["new_articles"] == 2
+        assert stats["errors"] == 0
+
+        # Verify both articles in database
+        articles = session.exec(select(Article)).all()
+        assert len(articles) == 2
+
+    @patch("pydigestor.steps.ingest.RedditFetcher")
+    def test_run_with_reddit_error(self, mock_fetcher_class, session):
+        """Test ingest run with Reddit fetch error."""
+        # Mock RedditFetcher to raise error
+        mock_fetcher = Mock()
+        mock_fetcher.fetch_subreddit.side_effect = Exception("Reddit API error")
+        mock_fetcher_class.return_value = mock_fetcher
+
+        # Run ingest
+        from pydigestor.config import Settings
+        settings = Settings(rss_feeds=[], reddit_subreddits=["netsec"])
+        step = IngestStep(settings=settings)
+
+        stats = step.run(session=session)
+
+        # Verify stats
+        assert stats["total_fetched"] == 0
+        assert stats["new_articles"] == 0
+        assert stats["errors"] == 1
+
+    @patch("pydigestor.steps.ingest.RedditFetcher")
+    def test_run_with_multiple_subreddits(self, mock_fetcher_class, session):
+        """Test ingest run with multiple subreddits."""
+        # Mock RedditFetcher
+        mock_fetcher = Mock()
+
+        def mock_fetch_side_effect(subreddit, **kwargs):
+            if subreddit == "netsec":
+                return [
+                    FeedEntry(
+                        source_id="reddit:netsec:abc123",
+                        url="https://example.com/netsec-article",
+                        title="Netsec Post",
+                        content="",
+                        tags=["r/netsec"],
+                    )
+                ]
+            elif subreddit == "blueteamsec":
+                return [
+                    FeedEntry(
+                        source_id="reddit:blueteamsec:def456",
+                        url="https://example.com/blueteam-article",
+                        title="Blue Team Post",
+                        content="",
+                        tags=["r/blueteamsec"],
+                    )
+                ]
+            return []
+
+        mock_fetcher.fetch_subreddit.side_effect = mock_fetch_side_effect
+        mock_fetcher_class.return_value = mock_fetcher
+
+        # Run ingest with multiple subreddits
+        from pydigestor.config import Settings
+        settings = Settings(
+            rss_feeds=[],
+            reddit_subreddits=["netsec", "blueteamsec"]
+        )
+        step = IngestStep(settings=settings)
+
+        stats = step.run(session=session)
+
+        # Verify stats
+        assert stats["total_fetched"] == 2
+        assert stats["new_articles"] == 2
+        assert stats["errors"] == 0
+
+        # Verify both subreddit posts in database
         articles = session.exec(select(Article)).all()
         assert len(articles) == 2

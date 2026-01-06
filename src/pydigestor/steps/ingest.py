@@ -12,12 +12,13 @@ from pydigestor.database import get_session
 from pydigestor.models import Article
 from pydigestor.sources.extraction import ContentExtractor
 from pydigestor.sources.feeds import FeedEntry, RSSFeedSource
+from pydigestor.sources.reddit import QualityFilter, RedditFetcher
 
 console = Console()
 
 
 class IngestStep:
-    """Fetch RSS/Atom feeds and store articles in database."""
+    """Fetch RSS/Atom feeds and Reddit posts, then store articles in database."""
 
     def __init__(self, settings: Optional[Settings] = None):
         """
@@ -30,7 +31,7 @@ class IngestStep:
 
     def run(self, session: Optional[Session] = None, force_extraction: bool = False) -> dict:
         """
-        Run the ingest step: fetch all configured feeds and store new articles.
+        Run the ingest step: fetch all configured RSS feeds and Reddit posts, then store new articles.
 
         Args:
             session: Optional database session (for testing). If not provided, creates a new session.
@@ -38,10 +39,10 @@ class IngestStep:
 
         Returns:
             Dictionary with statistics:
-                - total_fetched: Total entries fetched from feeds
+                - total_fetched: Total entries fetched from all sources (RSS + Reddit)
                 - new_articles: Number of new articles stored
                 - duplicates: Number of duplicate articles skipped
-                - errors: Number of feeds that failed
+                - errors: Number of sources that failed
         """
         console.print("\n[bold]═══ Ingest Step ═══[/bold]\n")
 
@@ -63,6 +64,33 @@ class IngestStep:
             except Exception as e:
                 console.print(f"[red]✗[/red] Failed to fetch {feed_url}: {e}")
                 stats["errors"] += 1
+
+        # Fetch entries from Reddit subreddits
+        if self.settings.reddit_subreddits:
+            console.print(f"\n[blue]Fetching from Reddit...[/blue]")
+
+            # Create quality filter
+            quality_filter = QualityFilter(
+                max_age_hours=self.settings.reddit_max_age_hours,
+                min_score=self.settings.reddit_min_score,
+                blocked_domains=self.settings.reddit_blocked_domains,
+            )
+
+            # Fetch from each subreddit
+            fetcher = RedditFetcher()
+            for subreddit in self.settings.reddit_subreddits:
+                try:
+                    entries = fetcher.fetch_subreddit(
+                        subreddit=subreddit,
+                        sort=self.settings.reddit_sort,
+                        limit=self.settings.reddit_limit,
+                        quality_filter=quality_filter,
+                    )
+                    all_entries.extend(entries)
+                    stats["total_fetched"] += len(entries)
+                except Exception as e:
+                    console.print(f"[red]✗[/red] Failed to fetch /r/{subreddit}: {e}")
+                    stats["errors"] += 1
 
         console.print(f"\n[blue]Total entries fetched:[/blue] {stats['total_fetched']}")
 
