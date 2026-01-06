@@ -47,8 +47,10 @@ class TestIngestStep:
         # Store article
         result = step._store_article(session, entry)
 
-        # Should return True (new article)
-        assert result is True
+        # Should return UUID (new article)
+        assert result is not None
+        from uuid import UUID
+        assert isinstance(result, UUID)
 
         # Verify article in database
         article = session.exec(
@@ -77,11 +79,11 @@ class TestIngestStep:
 
         # Store article first time
         result1 = step._store_article(session, entry)
-        assert result1 is True
+        assert result1 is not None  # Returns UUID
 
         # Try to store again (duplicate)
         result2 = step._store_article(session, entry)
-        assert result2 is False
+        assert result2 is None  # Returns None for duplicates
 
         # Verify only one article in database
         articles = session.exec(
@@ -103,7 +105,7 @@ class TestIngestStep:
 
         result = step._store_article(session, entry)
 
-        assert result is True
+        assert result is not None  # Returns UUID
 
         article = session.exec(
             select(Article).where(Article.source_id == "rss:example.com:abc123")

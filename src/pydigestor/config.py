@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     )
 
     # Summarization
+    auto_summarize: bool = Field(
+        default=False, description="Auto-generate summaries during ingest"
+    )
     summarization_method: str = Field(
         default="lexrank", description="Summarization method (lexrank, textrank, lsa)"
     )
