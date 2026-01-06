@@ -220,7 +220,7 @@ class IngestStep:
 
         for article in articles:
             # Skip if content is too short
-            if len(article.content.strip()) < 200:
+            if len(article.content.strip()) < self.settings.summary_min_content_length:
                 continue
 
             # Generate summary

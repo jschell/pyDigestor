@@ -212,6 +212,7 @@ class TestSummarizationStep:
         with patch("pydigestor.steps.summarize.engine", session.get_bind()):
             with patch("pydigestor.steps.summarize.settings") as mock_settings:
                 mock_settings.summarization_method = "lexrank"
+                mock_settings.summary_min_content_length = 200
                 mock_settings.summary_min_sentences = 2
                 mock_settings.summary_max_sentences = 3
                 mock_settings.summary_compression_ratio = 0.20
@@ -289,6 +290,7 @@ class TestSummarizationStep:
         with patch("pydigestor.steps.summarize.engine", session.get_bind()):
             with patch("pydigestor.steps.summarize.settings") as mock_settings:
                 mock_settings.summarization_method = "lexrank"
+                mock_settings.summary_min_content_length = 200
                 mock_settings.summary_min_sentences = 2
                 mock_settings.summary_max_sentences = 3
                 mock_settings.summary_compression_ratio = 0.20

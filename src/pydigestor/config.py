@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     summarization_method: str = Field(
         default="lexrank", description="Summarization method (lexrank, textrank, lsa)"
     )
+    summary_min_content_length: int = Field(
+        default=200, description="Minimum content length (chars) required for summarization"
+    )
     summary_min_sentences: int = Field(
         default=3, description="Minimum sentences in summary"
     )
