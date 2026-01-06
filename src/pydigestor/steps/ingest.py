@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from pydigestor.config import Settings
 from pydigestor.database import get_session
 from pydigestor.models import Article
+from pydigestor.sources.extraction import ContentExtractor
 from pydigestor.sources.feeds import FeedEntry, RSSFeedSource
 
 console = Console()
@@ -63,6 +64,30 @@ class IngestStep:
                 stats["errors"] += 1
 
         console.print(f"\n[blue]Total entries fetched:[/blue] {stats['total_fetched']}")
+
+        # Extract content from URLs
+        if all_entries and self.settings.enable_pattern_extraction:
+            console.print(f"\n[blue]Extracting content...[/blue]")
+            extractor = ContentExtractor(
+                timeout=self.settings.content_fetch_timeout,
+                max_retries=self.settings.content_max_retries,
+            )
+
+            for entry in all_entries:
+                # Only extract if content is empty or very short (from summary)
+                if not entry.content or len(entry.content) < 200:
+                    extracted = extractor.extract(entry.url)
+                    if extracted:
+                        entry.content = extracted
+
+            # Add extraction metrics to stats
+            extraction_metrics = extractor.get_metrics()
+            stats["extraction"] = extraction_metrics
+            console.print(
+                f"[green]✓[/green] Content extraction: {extraction_metrics['success_rate']}% success rate "
+                f"({extraction_metrics['trafilatura_success'] + extraction_metrics['newspaper_success']}"
+                f"/{extraction_metrics['total_attempts']})"
+            )
 
         # Store entries in database
         if all_entries:
