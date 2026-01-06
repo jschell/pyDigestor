@@ -88,19 +88,26 @@ class ContentExtractor:
             Extracted content or None if failed
         """
         try:
-            # Browser-like headers to avoid bot detection
+            # Mobile browser headers (better for bot detection)
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept-Encoding": "gzip, deflate, br",
+                "Referer": "https://www.google.com/",
                 "DNT": "1",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
             }
 
+            # For Medium URLs, try mobile endpoint first
+            fetch_url = url
+            if "medium.com" in url.lower():
+                # Convert to mobile endpoint: medium.com/... -> medium.com/m/...
+                fetch_url = url.replace("medium.com/", "medium.com/m/", 1)
+
             # Download content with timeout
-            response = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+            response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
             response.raise_for_status()
 
             # Extract with trafilatura
