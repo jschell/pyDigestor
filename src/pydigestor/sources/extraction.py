@@ -155,9 +155,14 @@ class ContentExtractor:
             url: Original Medium URL
 
         Returns:
-            Mobile endpoint URL
+            Mobile endpoint URL (or original if short URL format)
         """
-        # Convert to mobile endpoint: medium.com/... -> medium.com/m/...
+        # Short URLs (/p/{id}) don't support mobile endpoint - return as-is
+        if "/p/" in url:
+            console.print(f"[dim]→ Medium short URL (keeping original): {url[:60]}...[/dim]")
+            return url
+
+        # Convert full URLs to mobile endpoint: medium.com/... -> medium.com/m/...
         return url.replace("medium.com/", "medium.com/m/", 1)
 
     def _extract_with_trafilatura(self, url: str) -> Optional[str]:
@@ -177,8 +182,12 @@ class ContentExtractor:
             # Get appropriate headers (with cookies for Medium)
             headers = self._get_mobile_headers(include_cookies=is_medium)
 
-            # Use mobile endpoint for Medium
+            # Use mobile endpoint for Medium (except short URLs)
             fetch_url = self._prepare_medium_url(url) if is_medium else url
+
+            # Debug logging for Medium URLs
+            if is_medium and fetch_url != url:
+                console.print(f"[dim]→ Using mobile endpoint: {fetch_url[:60]}...[/dim]")
 
             # Download content with timeout
             response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
