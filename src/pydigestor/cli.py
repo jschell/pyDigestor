@@ -114,11 +114,18 @@ def config():
 
 
 @app.command()
-def ingest():
+def ingest(
+    force_extraction: bool = typer.Option(
+        False,
+        "--force-extraction",
+        "-f",
+        help="Force content extraction even if content already exists"
+    )
+):
     """Fetch RSS/Atom feeds and store new articles in database."""
     try:
         step = IngestStep()
-        stats = step.run()
+        stats = step.run(force_extraction=force_extraction)
 
         # Exit with error if there were issues
         if stats["errors"] > 0 and stats["new_articles"] == 0:

@@ -28,12 +28,13 @@ class IngestStep:
         """
         self.settings = settings or Settings()
 
-    def run(self, session: Optional[Session] = None) -> dict:
+    def run(self, session: Optional[Session] = None, force_extraction: bool = False) -> dict:
         """
         Run the ingest step: fetch all configured feeds and store new articles.
 
         Args:
             session: Optional database session (for testing). If not provided, creates a new session.
+            force_extraction: Force content extraction even if content already exists.
 
         Returns:
             Dictionary with statistics:
@@ -74,8 +75,8 @@ class IngestStep:
             )
 
             for entry in all_entries:
-                # Only extract if content is empty or very short (from summary)
-                if not entry.content or len(entry.content) < 200:
+                # Extract if forced, or if content is empty/short
+                if force_extraction or not entry.content or len(entry.content) < 200:
                     extracted = extractor.extract(entry.url)
                     if extracted:
                         entry.content = extracted
