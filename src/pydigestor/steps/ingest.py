@@ -63,12 +63,13 @@ class IngestStep:
 
         # Store entries in database
         if all_entries:
-            with get_session() as session:
-                for entry in all_entries:
-                    if self._store_article(session, entry):
-                        stats["new_articles"] += 1
-                    else:
-                        stats["duplicates"] += 1
+            session = next(get_session())
+            for entry in all_entries:
+                if self._store_article(session, entry):
+                    stats["new_articles"] += 1
+                else:
+                    stats["duplicates"] += 1
+            session.close()
 
         # Display results
         self._display_results(stats)

@@ -58,26 +58,27 @@ class FeedEntry:
 
         # Extract content (prefer content over summary)
         content = None
-        if "content" in entry and entry.content:
-            content = entry.content[0].get("value", "")
+        if "content" in entry and entry.get("content"):
+            content = entry.get("content")[0].get("value", "")
         elif "summary" in entry:
             content = entry.get("summary", "")
 
-        # Extract summary (if different from content)
-        summary = entry.get("summary", "")
-        if summary == content:
-            summary = None
+        # Extract summary (keep if we have separate content, otherwise None)
+        summary = None
+        if "content" in entry and entry.get("content") and "summary" in entry:
+            # We have both content and summary - keep summary as separate field
+            summary = entry.get("summary", "")
 
         # Extract published date
         published_at = None
-        if "published_parsed" in entry and entry.published_parsed:
+        if "published_parsed" in entry and entry.get("published_parsed"):
             try:
-                published_at = datetime(*entry.published_parsed[:6])
+                published_at = datetime(*entry.get("published_parsed")[:6])
             except (TypeError, ValueError):
                 pass
-        elif "updated_parsed" in entry and entry.updated_parsed:
+        elif "updated_parsed" in entry and entry.get("updated_parsed"):
             try:
-                published_at = datetime(*entry.updated_parsed[:6])
+                published_at = datetime(*entry.get("updated_parsed")[:6])
             except (TypeError, ValueError):
                 pass
 
@@ -87,7 +88,7 @@ class FeedEntry:
         # Extract tags
         tags = []
         if "tags" in entry:
-            tags = [tag.get("term", "") for tag in entry.tags if tag.get("term")]
+            tags = [tag.get("term", "") for tag in entry.get("tags", []) if tag.get("term")]
 
         return cls(
             source_id=source_id,
