@@ -342,19 +342,36 @@ class ContentExtractor:
 
             # Try Lemmy API first (more reliable)
             api_url = f"{parsed.scheme}://{parsed.netloc}/api/v3/post?id={post_id}"
-            headers = self._get_mobile_headers(include_cookies=False)
+
+            # Use simple headers for API request (avoid compression issues)
+            api_headers = {
+                "User-Agent": "pyDigestor/0.1.0",
+                "Accept": "application/json",
+                "Accept-Encoding": "identity",  # Disable compression to avoid encoding issues
+            }
 
             try:
-                response = httpx.get(api_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response = httpx.get(
+                    api_url,
+                    timeout=self.timeout,
+                    follow_redirects=True,
+                    headers=api_headers
+                )
                 response.raise_for_status()
-                data = response.json()
 
-                # Extract URL from API response
-                if "post_view" in data and "post" in data["post_view"]:
-                    post_url = data["post_view"]["post"].get("url")
-                    if post_url and not self._is_lemmy_url(post_url):
-                        console.print(f"[dim]→ Found destination (API): {post_url[:60]}...[/dim]")
-                        return post_url
+                # Try to parse JSON
+                try:
+                    data = response.json()
+
+                    # Extract URL from API response
+                    if "post_view" in data and "post" in data["post_view"]:
+                        post_url = data["post_view"]["post"].get("url")
+                        if post_url and not self._is_lemmy_url(post_url):
+                            console.print(f"[dim]→ Found destination (API): {post_url[:60]}...[/dim]")
+                            return post_url
+                except (ValueError, KeyError) as json_error:
+                    console.print(f"[dim]→ API JSON parse failed: {json_error}[/dim]")
+
             except Exception as api_error:
                 console.print(f"[dim]→ Lemmy API failed, falling back to HTML: {api_error}[/dim]")
 
