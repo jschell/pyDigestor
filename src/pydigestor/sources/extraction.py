@@ -19,6 +19,17 @@ from rich.console import Console
 
 console = Console()
 
+# Known Lemmy instances (link aggregators)
+LEMMY_INSTANCES = [
+    "infosec.pub",
+    "lemmy.world",
+    "lemmy.ml",
+    "beehaw.org",
+    "lemmy.one",
+    "programming.dev",
+    "sh.itjust.works",
+]
+
 
 class ContentExtractor:
     """
@@ -61,6 +72,17 @@ class ContentExtractor:
         if url in self.failed_urls:
             self.metrics["cached_failures"] += 1
             return None
+
+        # Resolve Lemmy URLs to real destination first
+        if self._is_lemmy_url(url):
+            real_url = self._extract_lemmy_destination(url)
+            if real_url:
+                url = real_url  # Use the real destination URL
+            else:
+                # Could not resolve Lemmy URL
+                self.failed_urls.add(url)
+                self.metrics["failures"] += 1
+                return None
 
         self.metrics["total_attempts"] += 1
 
@@ -270,6 +292,81 @@ class ContentExtractor:
 
         except Exception as e:
             console.print(f"[dim]→ JSON-LD extraction failed: {e}[/dim]")
+            return None
+
+    def _is_lemmy_url(self, url: str) -> bool:
+        """
+        Check if URL is from a Lemmy instance.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL is from a known Lemmy instance
+        """
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+
+        # Remove www. prefix if present
+        if domain.startswith("www."):
+            domain = domain[4:]
+
+        return domain in LEMMY_INSTANCES or "/post/" in parsed.path
+
+    def _extract_lemmy_destination(self, url: str) -> Optional[str]:
+        """
+        Extract the real destination URL from a Lemmy post page.
+
+        Args:
+            url: Lemmy post URL
+
+        Returns:
+            Real destination URL or None if not found
+        """
+        try:
+            console.print(f"[dim]→ Resolving Lemmy destination: {url[:60]}...[/dim]")
+
+            # Fetch Lemmy page
+            headers = self._get_mobile_headers(include_cookies=False)
+            response = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+            response.raise_for_status()
+
+            # Parse HTML
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Look for external link
+            # Lemmy uses <a class="link-external" or "external-link">
+            external_link = soup.find("a", class_=["external-link", "link-external"])
+
+            if external_link and external_link.get("href"):
+                real_url = external_link["href"]
+                console.print(f"[dim]→ Found destination: {real_url[:60]}...[/dim]")
+                return real_url
+
+            # Alternative: look for meta tags
+            og_url = soup.find("meta", property="og:url")
+            if og_url and og_url.get("content"):
+                content_url = og_url["content"]
+                # Make sure it's not the Lemmy URL itself
+                if not self._is_lemmy_url(content_url):
+                    console.print(f"[dim]→ Found og:url: {content_url[:60]}...[/dim]")
+                    return content_url
+
+            # Alternative: look in post body for links
+            post_body = soup.find("div", class_=["post-body", "md-div"])
+            if post_body:
+                first_link = post_body.find("a", href=True)
+                if first_link:
+                    link_url = first_link["href"]
+                    if not self._is_lemmy_url(link_url) and link_url.startswith("http"):
+                        console.print(f"[dim]→ Found link in post: {link_url[:60]}...[/dim]")
+                        return link_url
+
+            console.print("[yellow]⚠[/yellow] Could not extract destination from Lemmy post")
+            return None
+
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Error resolving Lemmy URL: {e}")
             return None
 
     def _extract_with_trafilatura(self, url: str) -> Optional[str]:
