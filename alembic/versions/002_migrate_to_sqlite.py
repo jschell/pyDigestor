@@ -70,13 +70,14 @@ def upgrade() -> None:
     op.create_index('ix_signals_created_at', 'signals', ['created_at'], unique=False)
 
     # Create FTS5 virtual table for full-text search
+    # Note: Removed content='' to allow article_id column to work properly
+    # FTS5 will store its own copy of the data (not contentless)
     op.execute("""
         CREATE VIRTUAL TABLE articles_fts USING fts5(
             article_id UNINDEXED,
             title,
             content,
             summary,
-            content='',
             tokenize='porter unicode61'
         );
     """)
