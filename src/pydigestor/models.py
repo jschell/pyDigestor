@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlmodel import Column, Field, SQLModel
-from sqlalchemy import Text
+from sqlalchemy import Text, ForeignKey
 
 
 class Article(SQLModel, table=True):
@@ -51,9 +51,7 @@ class TriageDecision(SQLModel, table=True):
         sa_column=Column(Text, primary_key=True),
     )
     article_id: str = Field(
-        foreign_key="articles.id",
-        index=True,
-        sa_column=Column(Text),
+        sa_column=Column(Text, ForeignKey("articles.id"), index=True),
     )
     keep: bool = Field(description="Whether to keep this article")
     reasoning: str | None = Field(default=None, description="LLM reasoning for decision")
@@ -77,9 +75,7 @@ class Signal(SQLModel, table=True):
         sa_column=Column(Text, primary_key=True),
     )
     article_id: str = Field(
-        foreign_key="articles.id",
-        index=True,
-        sa_column=Column(Text),
+        sa_column=Column(Text, ForeignKey("articles.id"), index=True),
     )
     signal_type: str = Field(
         index=True,
