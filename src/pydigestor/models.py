@@ -16,7 +16,6 @@ class Article(SQLModel, table=True):
     # UUID stored as TEXT in SQLite
     id: str = Field(
         default_factory=lambda: str(uuid4()),
-        primary_key=True,
         sa_column=Column(Text, primary_key=True),
     )
     source_id: str = Field(unique=True, index=True, description="Unique ID from source")
@@ -49,7 +48,6 @@ class TriageDecision(SQLModel, table=True):
     # UUID stored as TEXT in SQLite
     id: str = Field(
         default_factory=lambda: str(uuid4()),
-        primary_key=True,
         sa_column=Column(Text, primary_key=True),
     )
     article_id: str = Field(
@@ -76,7 +74,6 @@ class Signal(SQLModel, table=True):
     # UUID stored as TEXT in SQLite
     id: str = Field(
         default_factory=lambda: str(uuid4()),
-        primary_key=True,
         sa_column=Column(Text, primary_key=True),
     )
     article_id: str = Field(
