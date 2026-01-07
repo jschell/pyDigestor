@@ -60,6 +60,7 @@ REDDIT_SUBREDDITS=["netsec"]                     # Not a secret!
 
 | Feature | TOML | YAML | Python Module | Keep .env |
 |---------|------|------|---------------|-----------|
+| **Implemented in pyDigestor** | ✅ **Yes** | ❌ No | ❌ No | ✅ (default) |
 | **No dependencies** | ✅ (Python 3.11+) | ❌ (needs pyyaml) | ✅ | ✅ |
 | **Human-friendly** | ✅ | ✅ | ⚠️ (for devs) | ⚠️ |
 | **Comments** | ✅ | ✅ | ✅ | ✅ |
@@ -176,7 +177,7 @@ max_sentences = 8
 
 ---
 
-## Option 2: YAML
+## Option 2: YAML (Not Currently Implemented)
 
 ### Why YAML?
 
@@ -184,43 +185,28 @@ max_sentences = 8
 - ✅ **Human-friendly** and concise
 - ✅ **Great for nested structures**
 - ⚠️ **Requires dependency** (`pip install pyyaml`)
+- ⚠️ **Not implemented in pyDigestor** (would need additional code)
 
-### Setup
+### Implementation Required
+
+To add YAML support, you would need to:
 
 **1. Add dependency:**
 ```bash
 uv add pyyaml
 ```
 
-**2. Create `config.example.yaml`** (already created above)
+**2. Modify `config.py` to load YAML**
 
-**3. Update `config.py`:**
+**3. Add `_flatten_yaml()` method similar to `_flatten_toml()`**
 
-```python
-import yaml
-from pathlib import Path
-
-class Settings(BaseSettings):
-    def __init__(self, **kwargs):
-        # Load from config.yaml if exists
-        config_path = Path("config.yaml")
-        yaml_data = {}
-
-        if config_path.exists():
-            with open(config_path) as f:
-                yaml_config = yaml.safe_load(f)
-            yaml_data = self._flatten_yaml(yaml_config)
-
-        merged_data = {**yaml_data, **kwargs}
-        super().__init__(**merged_data)
-```
-
-### When to Use YAML
+### When to Consider YAML
 
 - ✅ You're already using YAML elsewhere (Docker Compose, CI/CD)
 - ✅ You need very complex nested configurations
-- ✅ Your team prefers YAML over TOML
-- ❌ You want zero dependencies (use TOML instead)
+- ✅ Your team strongly prefers YAML over TOML
+- ❌ You want zero dependencies (stick with TOML instead)
+- ❌ You want it to work out-of-the-box (TOML is already implemented)
 
 ---
 
