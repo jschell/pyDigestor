@@ -237,7 +237,10 @@ def rebuild_fts_index():
         # Drop and recreate FTS table with triggers
         from sqlalchemy import text
 
-        console.print("[blue]Dropping old FTS table...[/blue]")
+        console.print("[blue]Dropping old FTS table and triggers...[/blue]")
+        session.execute(text("DROP TRIGGER IF EXISTS articles_fts_insert"))
+        session.execute(text("DROP TRIGGER IF EXISTS articles_fts_update"))
+        session.execute(text("DROP TRIGGER IF EXISTS articles_fts_delete"))
         session.execute(text("DROP TABLE IF EXISTS articles_fts"))
 
         console.print("[blue]Creating new FTS table...[/blue]")
