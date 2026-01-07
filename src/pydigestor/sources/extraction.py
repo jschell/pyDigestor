@@ -326,8 +326,39 @@ class ContentExtractor:
         try:
             console.print(f"[dim]→ Resolving Lemmy destination: {url[:60]}...[/dim]")
 
-            # Fetch Lemmy page
+            parsed = urlparse(url)
+
+            # Extract post ID from URL (e.g., /post/40102015)
+            path_parts = parsed.path.split("/")
+            post_id = None
+            for i, part in enumerate(path_parts):
+                if part == "post" and i + 1 < len(path_parts):
+                    post_id = path_parts[i + 1]
+                    break
+
+            if not post_id:
+                console.print("[yellow]⚠[/yellow] Could not extract post ID from Lemmy URL")
+                return None
+
+            # Try Lemmy API first (more reliable)
+            api_url = f"{parsed.scheme}://{parsed.netloc}/api/v3/post?id={post_id}"
             headers = self._get_mobile_headers(include_cookies=False)
+
+            try:
+                response = httpx.get(api_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+
+                # Extract URL from API response
+                if "post_view" in data and "post" in data["post_view"]:
+                    post_url = data["post_view"]["post"].get("url")
+                    if post_url and not self._is_lemmy_url(post_url):
+                        console.print(f"[dim]→ Found destination (API): {post_url[:60]}...[/dim]")
+                        return post_url
+            except Exception as api_error:
+                console.print(f"[dim]→ Lemmy API failed, falling back to HTML: {api_error}[/dim]")
+
+            # Fallback to HTML scraping
             response = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
             response.raise_for_status()
 
@@ -340,7 +371,7 @@ class ContentExtractor:
 
             if external_link and external_link.get("href"):
                 real_url = external_link["href"]
-                console.print(f"[dim]→ Found destination: {real_url[:60]}...[/dim]")
+                console.print(f"[dim]→ Found destination (HTML): {real_url[:60]}...[/dim]")
                 return real_url
 
             # Alternative: look for meta tags
