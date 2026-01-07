@@ -2,16 +2,37 @@
 
 from collections.abc import Generator
 
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, create_engine, event
 
 from pydigestor.config import settings
 
-# Create database engine
+# Create database engine with SQLite-specific settings
+connect_args = {}
+if settings.database_url.startswith("sqlite"):
+    connect_args["check_same_thread"] = False  # Allow multi-threaded access
+
 engine = create_engine(
     settings.database_url,
     echo=settings.enable_debug,  # Log SQL queries in debug mode
-    pool_pre_ping=True,  # Verify connections before using
+    connect_args=connect_args,
 )
+
+
+# Load sqlite-vec extension on connection (SQLite only)
+@event.listens_for(engine, "connect")
+def on_connect(dbapi_conn, connection_record):
+    """Load SQLite extensions on connection."""
+    if settings.database_url.startswith("sqlite"):
+        try:
+            dbapi_conn.enable_load_extension(True)
+            # Load sqlite-vec extension
+            import sqlite_vec
+            sqlite_vec.load(dbapi_conn)
+            dbapi_conn.enable_load_extension(False)
+        except Exception as e:
+            # Log warning but don't fail - extension might not be needed yet
+            import logging
+            logging.warning(f"Could not load sqlite-vec extension: {e}")
 
 
 def get_session() -> Generator[Session, None, None]:

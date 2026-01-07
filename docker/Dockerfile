@@ -1,8 +1,8 @@
 FROM python:3.13-slim
 
-# Install system dependencies
+# Install system dependencies for sqlite-vec compilation
 RUN apt-get update && apt-get install -y \
-    postgresql-client \
+    build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,6 +22,9 @@ COPY alembic.ini .
 
 # Install dependencies with uv
 RUN uv sync
+
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
 
 # Copy entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh
