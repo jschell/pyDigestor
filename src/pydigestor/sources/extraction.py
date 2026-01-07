@@ -69,6 +69,7 @@ class ContentExtractor:
             Tuple of (extracted text content or None if failed, resolved URL)
         """
         original_url = url
+        was_lemmy = False
 
         # Check if URL previously failed
         if url in self.failed_urls:
@@ -77,6 +78,7 @@ class ContentExtractor:
 
         # Resolve Lemmy URLs to real destination first
         if self._is_lemmy_url(url):
+            was_lemmy = True
             real_url = self._extract_lemmy_destination(url)
             if real_url:
                 url = real_url  # Use the real destination URL
@@ -92,19 +94,21 @@ class ContentExtractor:
         content = self._extract_with_trafilatura(url)
         if content:
             self.metrics["trafilatura_success"] += 1
-            return content, url
+            # Return resolved URL only for Lemmy, otherwise return original
+            return content, url if was_lemmy else original_url
 
         # Fallback to newspaper3k
         content = self._extract_with_newspaper(url)
         if content:
             self.metrics["newspaper_success"] += 1
-            return content, url
+            # Return resolved URL only for Lemmy, otherwise return original
+            return content, url if was_lemmy else original_url
 
         # Both methods failed - cache the URL
         self.failed_urls.add(original_url)
         self.metrics["failures"] += 1
         console.print(f"[yellow]⚠[/yellow] Failed to extract content from {url[:60]}...")
-        return None, url
+        return None, original_url
 
     def _generate_medium_cookies(self) -> str:
         """
