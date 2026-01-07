@@ -227,6 +227,90 @@ def search(
 
 
 @app.command()
+def rebuild_fts_index():
+    """Rebuild FTS5 search index from all articles in database."""
+    try:
+        console.print("\n[bold]Rebuilding FTS5 Index[/bold]\n")
+
+        session = next(get_session())
+
+        # Drop and recreate FTS table with triggers
+        from sqlalchemy import text
+
+        console.print("[blue]Dropping old FTS table...[/blue]")
+        session.execute(text("DROP TABLE IF EXISTS articles_fts"))
+
+        console.print("[blue]Creating new FTS table...[/blue]")
+        session.execute(text("""
+            CREATE VIRTUAL TABLE articles_fts USING fts5(
+                article_id UNINDEXED,
+                title,
+                content,
+                summary,
+                content='',
+                tokenize='porter unicode61'
+            )
+        """))
+
+        console.print("[blue]Creating triggers...[/blue]")
+        # Recreate triggers
+        session.execute(text("""
+            CREATE TRIGGER articles_fts_insert AFTER INSERT ON articles
+            BEGIN
+                INSERT INTO articles_fts(article_id, title, content, summary)
+                VALUES (
+                    new.id,
+                    new.title,
+                    COALESCE(new.content, ''),
+                    COALESCE(new.summary, '')
+                );
+            END
+        """))
+
+        session.execute(text("""
+            CREATE TRIGGER articles_fts_update AFTER UPDATE ON articles
+            BEGIN
+                DELETE FROM articles_fts WHERE article_id = old.id;
+                INSERT INTO articles_fts(article_id, title, content, summary)
+                VALUES (
+                    new.id,
+                    new.title,
+                    COALESCE(new.content, ''),
+                    COALESCE(new.summary, '')
+                );
+            END
+        """))
+
+        session.execute(text("""
+            CREATE TRIGGER articles_fts_delete AFTER DELETE ON articles
+            BEGIN
+                DELETE FROM articles_fts WHERE article_id = old.id;
+            END
+        """))
+
+        console.print("[blue]Populating FTS index from existing articles...[/blue]")
+        # Manually populate for existing articles
+        result = session.execute(text("""
+            INSERT INTO articles_fts(article_id, title, content, summary)
+            SELECT id, title, COALESCE(content, ''), COALESCE(summary, '')
+            FROM articles
+        """))
+
+        session.commit()
+
+        # Get counts
+        article_count = session.execute(text("SELECT COUNT(*) FROM articles")).scalar()
+        fts_count = session.execute(text("SELECT COUNT(*) FROM articles_fts")).scalar()
+
+        console.print(f"\n[green]✓[/green] FTS index rebuilt successfully")
+        console.print(f"[green]✓[/green] Indexed {fts_count} articles (total in DB: {article_count})\n")
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def build_tfidf_index(
     max_features: int = typer.Option(5000, "--max-features", help="Maximum vocabulary size"),
     min_df: int = typer.Option(2, "--min-df", help="Minimum document frequency"),
