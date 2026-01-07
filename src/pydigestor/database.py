@@ -3,7 +3,6 @@
 from collections.abc import Generator
 
 from sqlmodel import Session, create_engine
-from sqlalchemy import event
 
 from pydigestor.config import settings
 
@@ -17,23 +16,6 @@ engine = create_engine(
     echo=settings.enable_debug,  # Log SQL queries in debug mode
     connect_args=connect_args,
 )
-
-
-# Load sqlite-vec extension on connection (SQLite only)
-@event.listens_for(engine, "connect")
-def on_connect(dbapi_conn, connection_record):
-    """Load SQLite extensions on connection."""
-    if settings.database_url.startswith("sqlite"):
-        try:
-            dbapi_conn.enable_load_extension(True)
-            # Load sqlite-vec extension
-            import sqlite_vec
-            sqlite_vec.load(dbapi_conn)
-            dbapi_conn.enable_load_extension(False)
-        except Exception as e:
-            # Log warning but don't fail - extension might not be needed yet
-            import logging
-            logging.warning(f"Could not load sqlite-vec extension: {e}")
 
 
 def get_session() -> Generator[Session, None, None]:
