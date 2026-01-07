@@ -11,8 +11,20 @@ if [ -n "$DATABASE_URL" ]; then
         # Ensure data directory exists
         mkdir -p /app/data
 
+        # Extract database file path from DATABASE_URL
+        DB_FILE=$(echo $DATABASE_URL | sed 's|sqlite:///||')
+
+        if [ ! -f "$DB_FILE" ]; then
+            echo "==> Database file not found, initializing..."
+        else
+            echo "==> Database file exists at $DB_FILE"
+        fi
+
         echo "==> Running database migrations..."
-        uv run alembic upgrade head
+        uv run alembic upgrade head || {
+            echo "==> ERROR: Migration failed!"
+            exit 1
+        }
         echo "==> Migrations complete!"
 
     elif [[ $DATABASE_URL == postgresql* ]]; then
