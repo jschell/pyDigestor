@@ -58,7 +58,7 @@ class ContentExtractor:
             "cached_failures": 0,
         }
 
-    def extract(self, url: str) -> Optional[str]:
+    def extract(self, url: str) -> tuple[Optional[str], str]:
         """
         Extract content from a URL.
 
@@ -66,12 +66,14 @@ class ContentExtractor:
             url: URL to extract content from
 
         Returns:
-            Extracted text content or None if extraction failed
+            Tuple of (extracted text content or None if failed, resolved URL)
         """
+        original_url = url
+
         # Check if URL previously failed
         if url in self.failed_urls:
             self.metrics["cached_failures"] += 1
-            return None
+            return None, original_url
 
         # Resolve Lemmy URLs to real destination first
         if self._is_lemmy_url(url):
@@ -80,9 +82,9 @@ class ContentExtractor:
                 url = real_url  # Use the real destination URL
             else:
                 # Could not resolve Lemmy URL
-                self.failed_urls.add(url)
+                self.failed_urls.add(original_url)
                 self.metrics["failures"] += 1
-                return None
+                return None, original_url
 
         self.metrics["total_attempts"] += 1
 
@@ -90,19 +92,19 @@ class ContentExtractor:
         content = self._extract_with_trafilatura(url)
         if content:
             self.metrics["trafilatura_success"] += 1
-            return content
+            return content, url
 
         # Fallback to newspaper3k
         content = self._extract_with_newspaper(url)
         if content:
             self.metrics["newspaper_success"] += 1
-            return content
+            return content, url
 
         # Both methods failed - cache the URL
-        self.failed_urls.add(url)
+        self.failed_urls.add(original_url)
         self.metrics["failures"] += 1
         console.print(f"[yellow]⚠[/yellow] Failed to extract content from {url[:60]}...")
-        return None
+        return None, url
 
     def _generate_medium_cookies(self) -> str:
         """

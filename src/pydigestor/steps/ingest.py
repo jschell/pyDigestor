@@ -106,9 +106,10 @@ class IngestStep:
             for entry in all_entries:
                 # Extract if forced, or if content is empty/short
                 if force_extraction or not entry.content or len(entry.content) < 200:
-                    extracted = extractor.extract(entry.url)
-                    if extracted:
-                        entry.content = extracted
+                    content, resolved_url = extractor.extract(entry.url)
+                    if content:
+                        entry.content = content
+                        entry.url = resolved_url  # Use resolved URL as source of truth
 
             # Add extraction metrics to stats
             extraction_metrics = extractor.get_metrics()
