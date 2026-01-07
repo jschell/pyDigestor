@@ -32,16 +32,19 @@ class TestContentExtractor:
         mock_response = Mock()
         mock_response.content = b"<html>Article content</html>"
         mock_response.raise_for_status = Mock()
+        mock_response.text = "<html>Article content</html>"
+        mock_response.url = "https://example.com/article"  # Mock final URL
         mock_get.return_value = mock_response
 
         # Mock trafilatura extraction
         mock_trafilatura.return_value = "This is a long article content that is definitely more than 100 characters to pass validation and ensure successful extraction."
 
         extractor = ContentExtractor()
-        content = extractor.extract("https://example.com/article")
+        content, resolved_url = extractor.extract("https://example.com/article")
 
         assert content is not None
         assert len(content) > 100
+        assert resolved_url == "https://example.com/article"
         assert extractor.metrics["trafilatura_success"] == 1
         assert extractor.metrics["total_attempts"] == 1
 
@@ -56,6 +59,8 @@ class TestContentExtractor:
         mock_response = Mock()
         mock_response.content = b"<html>Article content</html>"
         mock_response.raise_for_status = Mock()
+        mock_response.text = "<html>Article content</html>"
+        mock_response.url = "https://example.com/article"  # Mock final URL
         mock_get.return_value = mock_response
 
         # Mock trafilatura to return short content (fails validation)
@@ -64,13 +69,15 @@ class TestContentExtractor:
         # Mock newspaper3k extraction
         mock_article = Mock()
         mock_article.text = "This is a long article content from newspaper3k that is definitely more than 100 characters to pass validation."
+        mock_article.url = "https://example.com/article"  # Mock article URL
         mock_newspaper_class.return_value = mock_article
 
         extractor = ContentExtractor()
-        content = extractor.extract("https://example.com/article")
+        content, resolved_url = extractor.extract("https://example.com/article")
 
         assert content is not None
         assert len(content) > 100
+        assert resolved_url == "https://example.com/article"
         assert extractor.metrics["trafilatura_success"] == 0
         assert extractor.metrics["newspaper_success"] == 1
         assert extractor.metrics["total_attempts"] == 1
@@ -82,9 +89,10 @@ class TestContentExtractor:
         mock_get.side_effect = httpx.TimeoutException("Connection timeout")
 
         extractor = ContentExtractor()
-        content = extractor.extract("https://example.com/article")
+        content, resolved_url = extractor.extract("https://example.com/article")
 
         assert content is None
+        assert resolved_url == "https://example.com/article"
         assert extractor.metrics["failures"] == 1
         assert "https://example.com/article" in extractor.failed_urls
 
@@ -95,9 +103,10 @@ class TestContentExtractor:
         mock_get.side_effect = httpx.HTTPError("404 Not Found")
 
         extractor = ContentExtractor()
-        content = extractor.extract("https://example.com/article")
+        content, resolved_url = extractor.extract("https://example.com/article")
 
         assert content is None
+        assert resolved_url == "https://example.com/article"
         assert extractor.metrics["failures"] == 1
 
     def test_extract_cached_failure(self):
@@ -106,9 +115,10 @@ class TestContentExtractor:
         extractor.failed_urls.add("https://example.com/bad-url")
 
         # Try to extract from cached failed URL
-        content = extractor.extract("https://example.com/bad-url")
+        content, resolved_url = extractor.extract("https://example.com/bad-url")
 
         assert content is None
+        assert resolved_url == "https://example.com/bad-url"
         assert extractor.metrics["cached_failures"] == 1
         assert extractor.metrics["total_attempts"] == 0  # Not attempted
 
@@ -132,9 +142,10 @@ class TestContentExtractor:
             mock_newspaper.return_value = mock_article
 
             extractor = ContentExtractor()
-            content = extractor.extract("https://example.com/article")
+            content, resolved_url = extractor.extract("https://example.com/article")
 
             assert content is None
+            assert resolved_url == "https://example.com/article"
             assert extractor.metrics["failures"] == 1
 
     def test_get_metrics(self):
@@ -196,9 +207,9 @@ class TestContentExtractor:
         extractor = ContentExtractor()
 
         # Extract from multiple URLs (non-Medium to avoid BeautifulSoup complexity)
-        extractor.extract("https://example.com/article1")
-        extractor.extract("https://example.com/article2")
-        extractor.extract("https://example.com/article3")
+        _, _ = extractor.extract("https://example.com/article1")
+        _, _ = extractor.extract("https://example.com/article2")
+        _, _ = extractor.extract("https://example.com/article3")
 
         # All extractions should succeed
         assert extractor.metrics["total_attempts"] == 3
@@ -225,7 +236,8 @@ class TestContentExtractor:
             mock_newspaper.return_value = mock_article
 
             extractor = ContentExtractor()
-            content = extractor.extract("https://example.com/article")
+            content, resolved_url = extractor.extract("https://example.com/article")
 
             assert content is None
+            assert resolved_url == "https://example.com/article"
             assert extractor.metrics["failures"] == 1

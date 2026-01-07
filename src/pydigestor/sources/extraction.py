@@ -19,6 +19,17 @@ from rich.console import Console
 
 console = Console()
 
+# Known Lemmy instances (link aggregators)
+LEMMY_INSTANCES = [
+    "infosec.pub",
+    "lemmy.world",
+    "lemmy.ml",
+    "beehaw.org",
+    "lemmy.one",
+    "programming.dev",
+    "sh.itjust.works",
+]
+
 
 class ContentExtractor:
     """
@@ -47,7 +58,7 @@ class ContentExtractor:
             "cached_failures": 0,
         }
 
-    def extract(self, url: str) -> Optional[str]:
+    def extract(self, url: str) -> tuple[Optional[str], str]:
         """
         Extract content from a URL.
 
@@ -55,32 +66,49 @@ class ContentExtractor:
             url: URL to extract content from
 
         Returns:
-            Extracted text content or None if extraction failed
+            Tuple of (extracted text content or None if failed, resolved URL)
         """
+        original_url = url
+        was_lemmy = False
+
         # Check if URL previously failed
         if url in self.failed_urls:
             self.metrics["cached_failures"] += 1
-            return None
+            return None, original_url
+
+        # Resolve Lemmy URLs to real destination first
+        if self._is_lemmy_url(url):
+            was_lemmy = True
+            real_url = self._extract_lemmy_destination(url)
+            if real_url:
+                url = real_url  # Use the real destination URL
+            else:
+                # Could not resolve Lemmy URL
+                self.failed_urls.add(original_url)
+                self.metrics["failures"] += 1
+                return None, original_url
 
         self.metrics["total_attempts"] += 1
 
         # Try trafilatura first
-        content = self._extract_with_trafilatura(url)
+        content, final_url = self._extract_with_trafilatura(url)
         if content:
             self.metrics["trafilatura_success"] += 1
-            return content
+            # For Lemmy, use the resolved destination; for others, use final URL from extraction
+            return content, url if was_lemmy else final_url
 
         # Fallback to newspaper3k
-        content = self._extract_with_newspaper(url)
+        content, final_url = self._extract_with_newspaper(url)
         if content:
             self.metrics["newspaper_success"] += 1
-            return content
+            # For Lemmy, use the resolved destination; for others, use final URL from extraction
+            return content, url if was_lemmy else final_url
 
         # Both methods failed - cache the URL
-        self.failed_urls.add(url)
+        self.failed_urls.add(original_url)
         self.metrics["failures"] += 1
         console.print(f"[yellow]⚠[/yellow] Failed to extract content from {url[:60]}...")
-        return None
+        return None, original_url
 
     def _generate_medium_cookies(self) -> str:
         """
@@ -272,7 +300,130 @@ class ContentExtractor:
             console.print(f"[dim]→ JSON-LD extraction failed: {e}[/dim]")
             return None
 
-    def _extract_with_trafilatura(self, url: str) -> Optional[str]:
+    def _is_lemmy_url(self, url: str) -> bool:
+        """
+        Check if URL is from a Lemmy instance.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL is from a known Lemmy instance
+        """
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+
+        # Remove www. prefix if present
+        if domain.startswith("www."):
+            domain = domain[4:]
+
+        return domain in LEMMY_INSTANCES or "/post/" in parsed.path
+
+    def _extract_lemmy_destination(self, url: str) -> Optional[str]:
+        """
+        Extract the real destination URL from a Lemmy post page.
+
+        Args:
+            url: Lemmy post URL
+
+        Returns:
+            Real destination URL or None if not found
+        """
+        try:
+            console.print(f"[dim]→ Resolving Lemmy destination: {url[:60]}...[/dim]")
+
+            parsed = urlparse(url)
+
+            # Extract post ID from URL (e.g., /post/40102015)
+            path_parts = parsed.path.split("/")
+            post_id = None
+            for i, part in enumerate(path_parts):
+                if part == "post" and i + 1 < len(path_parts):
+                    post_id = path_parts[i + 1]
+                    break
+
+            if not post_id:
+                console.print("[yellow]⚠[/yellow] Could not extract post ID from Lemmy URL")
+                return None
+
+            # Try Lemmy API first (more reliable)
+            api_url = f"{parsed.scheme}://{parsed.netloc}/api/v3/post?id={post_id}"
+
+            # Use simple headers for API request (avoid compression issues)
+            api_headers = {
+                "User-Agent": "pyDigestor/0.1.0",
+                "Accept": "application/json",
+                "Accept-Encoding": "identity",  # Disable compression to avoid encoding issues
+            }
+
+            try:
+                response = httpx.get(
+                    api_url,
+                    timeout=self.timeout,
+                    follow_redirects=True,
+                    headers=api_headers
+                )
+                response.raise_for_status()
+
+                # Try to parse JSON
+                try:
+                    data = response.json()
+
+                    # Extract URL from API response
+                    if "post_view" in data and "post" in data["post_view"]:
+                        post_url = data["post_view"]["post"].get("url")
+                        if post_url and not self._is_lemmy_url(post_url):
+                            console.print(f"[dim]→ Found destination (API): {post_url[:60]}...[/dim]")
+                            return post_url
+                except (ValueError, KeyError) as json_error:
+                    console.print(f"[dim]→ API JSON parse failed: {json_error}[/dim]")
+
+            except Exception as api_error:
+                console.print(f"[dim]→ Lemmy API failed, falling back to HTML: {api_error}[/dim]")
+
+            # Fallback to HTML scraping
+            response = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+            response.raise_for_status()
+
+            # Parse HTML
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Look for external link
+            # Lemmy uses <a class="link-external" or "external-link">
+            external_link = soup.find("a", class_=["external-link", "link-external"])
+
+            if external_link and external_link.get("href"):
+                real_url = external_link["href"]
+                console.print(f"[dim]→ Found destination (HTML): {real_url[:60]}...[/dim]")
+                return real_url
+
+            # Alternative: look for meta tags
+            og_url = soup.find("meta", property="og:url")
+            if og_url and og_url.get("content"):
+                content_url = og_url["content"]
+                # Make sure it's not the Lemmy URL itself
+                if not self._is_lemmy_url(content_url):
+                    console.print(f"[dim]→ Found og:url: {content_url[:60]}...[/dim]")
+                    return content_url
+
+            # Alternative: look in post body for links
+            post_body = soup.find("div", class_=["post-body", "md-div"])
+            if post_body:
+                first_link = post_body.find("a", href=True)
+                if first_link:
+                    link_url = first_link["href"]
+                    if not self._is_lemmy_url(link_url) and link_url.startswith("http"):
+                        console.print(f"[dim]→ Found link in post: {link_url[:60]}...[/dim]")
+                        return link_url
+
+            console.print("[yellow]⚠[/yellow] Could not extract destination from Lemmy post")
+            return None
+
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Error resolving Lemmy URL: {e}")
+            return None
+
+    def _extract_with_trafilatura(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """
         Extract content using trafilatura.
 
@@ -280,7 +431,7 @@ class ContentExtractor:
             url: URL to extract from
 
         Returns:
-            Extracted content or None if failed
+            Tuple of (extracted content or None if failed, final URL after redirects)
         """
         try:
             # Check if this is a Medium URL
@@ -291,12 +442,14 @@ class ContentExtractor:
 
             html_content = None
             fetch_url = url
+            final_url = url
 
             # Special handling for Medium URLs
             if is_medium:
                 # Step 1: Resolve canonical URL (handles /p/ redirects and extracts HTML)
                 canonical_url, initial_html = self._resolve_medium_canonical(url, headers)
                 html_content = initial_html
+                final_url = canonical_url  # Use canonical URL as final URL
 
                 # Step 2: Classify URL type
                 url_type = self._classify_medium_url(canonical_url)
@@ -308,7 +461,7 @@ class ContentExtractor:
                 if html_content:
                     json_content = self._extract_from_json_ld(html_content)
                     if json_content:
-                        return json_content
+                        return json_content, final_url
 
                 # If canonical differs from fetch_url, need to re-fetch
                 if fetch_url != canonical_url and url_type == "standard":
@@ -320,12 +473,15 @@ class ContentExtractor:
                 response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
+                final_url = str(response.url)  # Capture final URL after redirects
 
             # If we don't have HTML yet, fetch it
             if not html_content:
                 response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
+                if not is_medium:
+                    final_url = str(response.url)  # Capture final URL after redirects
 
             # Extract with trafilatura
             content = trafilatura.extract(
@@ -337,21 +493,21 @@ class ContentExtractor:
 
             # Validate content
             if content and len(content.strip()) > 100:
-                return content.strip()
+                return content.strip(), final_url
 
-            return None
+            return None, final_url
 
         except httpx.TimeoutException:
             console.print(f"[yellow]⏱[/yellow] Timeout extracting (trafilatura): {url[:60]}...")
-            return None
+            return None, url
         except httpx.HTTPError as e:
             console.print(f"[yellow]HTTP error (trafilatura):[/yellow] {url[:60]}... - {e}")
-            return None
+            return None, url
         except Exception as e:
             console.print(f"[yellow]Error (trafilatura):[/yellow] {url[:60]}... - {e}")
-            return None
+            return None, url
 
-    def _extract_with_newspaper(self, url: str) -> Optional[str]:
+    def _extract_with_newspaper(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """
         Extract content using newspaper3k as fallback.
 
@@ -359,7 +515,7 @@ class ContentExtractor:
             url: URL to extract from
 
         Returns:
-            Extracted content or None if failed
+            Tuple of (extracted content or None if failed, final URL after redirects)
         """
         try:
             # Check if this is a Medium URL
@@ -370,11 +526,13 @@ class ContentExtractor:
 
             html_content = None
             fetch_url = url
+            final_url = url
 
             # Special handling for Medium URLs (same as trafilatura)
             if is_medium:
                 # Resolve canonical URL
                 canonical_url, initial_html = self._resolve_medium_canonical(url, headers)
+                final_url = canonical_url  # Use canonical URL as final URL
 
                 # Classify URL type
                 url_type = self._classify_medium_url(canonical_url)
@@ -402,16 +560,19 @@ class ContentExtractor:
             else:
                 article.download()
                 article.parse()
+                # For non-Medium URLs, try to get final URL from article
+                if not is_medium and hasattr(article, 'url') and article.url:
+                    final_url = article.url
 
             # Validate content
             if article.text and len(article.text.strip()) > 100:
-                return article.text.strip()
+                return article.text.strip(), final_url
 
-            return None
+            return None, final_url
 
         except Exception as e:
             console.print(f"[yellow]Error (newspaper3k):[/yellow] {url[:60]}... - {e}")
-            return None
+            return None, url
 
     def get_metrics(self) -> dict:
         """

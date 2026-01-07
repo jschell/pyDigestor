@@ -73,10 +73,13 @@ class Settings(BaseSettings):
 
     # Summarization
     auto_summarize: bool = Field(
-        default=False, description="Auto-generate summaries during ingest"
+        default=True, description="Auto-generate summaries during ingest"
     )
     summarization_method: str = Field(
         default="lexrank", description="Summarization method (lexrank, textrank, lsa)"
+    )
+    summary_min_content_length: int = Field(
+        default=200, description="Minimum content length (chars) required for summarization"
     )
     summary_min_sentences: int = Field(
         default=3, description="Minimum sentences in summary"

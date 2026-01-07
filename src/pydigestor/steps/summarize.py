@@ -164,7 +164,7 @@ class SummarizationStep:
             for article in articles:
                 try:
                     # Skip if content is too short
-                    if len(article.content.strip()) < 200:
+                    if len(article.content.strip()) < settings.summary_min_content_length:
                         console.print(
                             f"[dim]⊘ Skipping (too short): {article.title[:60]}...[/dim]"
                         )
