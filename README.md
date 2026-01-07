@@ -1,51 +1,57 @@
 # pyDigestor
 
-Feed aggregation and analysis pipeline that ingests RSS/Atom/Reddit feeds, extracts insights using local and LLM-based processing, and stores structured summaries in a queryable database.
+Feed aggregation and analysis pipeline that ingests RSS/Atom/Reddit feeds, extracts insights using local processing, and provides powerful search capabilities through SQLite FTS5 and TF-IDF ranking.
 
 ## Overview
 
-pyDigestor implements a 5-step pipeline:
+pyDigestor implements a streamlined pipeline:
 1. **Ingest** - Fetch feeds (RSS/Atom/Reddit), extract target URLs
-2. **Triage** - Fast LLM filter (keep/discard)
-3. **Extract** - Pull structured insights/signals
-4. **Summarize** - Local extractive summarization (TextRank/LexRank)
-5. **Store** - Save to queryable database
+2. **Extract** - Content extraction with pattern recognition (GitHub, PDFs, arXiv)
+3. **Summarize** - Local extractive summarization (TextRank/LexRank/LSA)
+4. **Search** - FTS5 full-text search + TF-IDF ranked retrieval
+5. **Store** - SQLite database with automatic FTS indexing
 
 ## Key Features
 
 - **Feed-agnostic**: Unified handling of RSS, Atom, and Reddit JSON
-- **Local-first summarization**: 80% cost savings vs LLM-only
+- **Local-first processing**: 100% local summarization and search (no API costs)
+- **Dual search modes**:
+  - FTS5 with porter stemming for fast keyword search
+  - TF-IDF domain-adaptive ranked retrieval
 - **Pattern-based extraction**: Fast-path for known sites (GitHub, PDFs, arXiv)
-- **Cost-optimized**: ~$0.42/month for LLM usage
-- **Security-focused**: Optimized for r/netsec and r/blueteamsec
-- **Docker-based**: Multi-container setup with PostgreSQL
+- **Lightweight**: Single-container SQLite architecture (808MB Docker image)
+- **Security-focused**: Optimized for r/netsec and security content
+- **LLM-ready**: Optional Claude integration for triage and extraction (Phase 2)
 
 ## Quick Start (Docker)
 
 ```bash
 # Clone repository
-git clone https://github.com/youruser/pyDigestor.git
+git clone https://github.com/jschell/pyDigestor.git
 cd pyDigestor
 
 # Configure environment
 cp .env.example .env
-# Edit .env if needed (defaults work for local development)
+# Edit .env with your RSS feeds if needed (defaults to KrebsOnSecurity)
 
-# Start Docker containers
+# Start Docker container
 cd docker
-docker-compose up -d
+docker-compose up -d --build
 
-# Wait for containers to start and migrations to run
-docker-compose logs -f app
+# Wait for migrations to complete
+docker-compose logs -f
 
 # Check status
 docker exec pydigestor-app uv run pydigestor status
 
-# Run tests
-docker exec pydigestor-app uv run pytest
+# Ingest articles
+docker exec pydigestor-app uv run pydigestor ingest
+
+# Search articles
+docker exec pydigestor-app uv run pydigestor search "CVE vulnerability"
 ```
 
-See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for detailed setup instructions.
+See [docs/quick start.md](docs/quick%20start.md) for detailed setup instructions.
 
 ## Architecture
 
@@ -54,13 +60,19 @@ RSS/Atom Feeds + Reddit → Parse → Extract URLs
     ↓
 Content Extraction (PDF, GitHub, arXiv, blogs)
     ↓
-LLM Triage (Claude Haiku) → Keep/Discard
-    ↓
-LLM Signal Extraction (Claude Sonnet) → Structured insights
+Pattern-based Extraction → Structured metadata
     ↓
 Local Summarization (LexRank) → 3-8 sentence summaries
     ↓
-PostgreSQL Database → Queryable storage
+SQLite Database → FTS5 indexed storage
+    ↓
+Search (FTS5 keyword + TF-IDF ranked)
+```
+
+**Optional LLM Pipeline (Phase 2):**
+```
+Articles → LLM Triage (Claude Haiku) → Keep/Discard
+         → LLM Signal Extraction (Claude Sonnet) → Structured insights
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed design.
@@ -68,33 +80,163 @@ See [docs/architecture.md](docs/architecture.md) for detailed design.
 ## Tech Stack
 
 - **Python 3.13** + **uv** - Fast dependency management
-- **Docker** + **Docker Compose** - Container orchestration
-- **PostgreSQL 16** - State storage
-- **LiteLLM** - Multi-provider LLM abstraction
-- **Claude (Anthropic)** - Haiku for triage, Sonnet for extraction
-- **sumy** - Local extractive summarization
+- **Docker** + **Docker Compose** - Single-container deployment
+- **SQLite3** with **FTS5** - Full-text search with porter stemming
+- **scikit-learn** - TF-IDF ranked retrieval
+- **sumy** - Local extractive summarization (LexRank, TextRank, LSA)
 - **trafilatura/newspaper3k** - Content extraction
 - **pdfplumber** - PDF text extraction
+- **feedparser** - RSS/Atom parsing
+- **LiteLLM** (optional) - Multi-provider LLM abstraction
+- **Claude (Anthropic)** (optional) - Triage and extraction
 
 ## CLI Usage
+
+### Basic Commands
 
 ```bash
 # All commands run inside Docker container
 
-# Check status
+# Check status and article counts
 docker exec pydigestor-app uv run pydigestor status
 
-# Show configuration
+# Show configuration (feeds, settings)
 docker exec pydigestor-app uv run pydigestor config
 
-# Run pipeline (Phase 1: without LLM)
+# Ingest articles from RSS/Reddit feeds
 docker exec pydigestor-app uv run pydigestor ingest
 
-# Run tests
-docker exec pydigestor-app uv run pytest
+# Show version
+docker exec pydigestor-app uv run pydigestor version
+```
 
-# Run tests with coverage
-docker exec pydigestor-app uv run pytest --cov
+### Search Commands
+
+```bash
+# FTS5 full-text search (fast keyword search)
+docker exec pydigestor-app uv run pydigestor search "CVE vulnerability"
+docker exec pydigestor-app uv run pydigestor search "ransomware" --limit 5
+
+# TF-IDF ranked search (domain-adaptive)
+docker exec pydigestor-app uv run pydigestor tfidf-search "zero day exploit" --limit 10
+
+# Build/rebuild TF-IDF index
+docker exec pydigestor-app uv run pydigestor build-tfidf-index --max-features 5000
+
+# Show top TF-IDF terms in your corpus
+docker exec pydigestor-app uv run pydigestor tfidf-terms --n 20
+
+# Rebuild FTS5 index (if search results are inconsistent)
+docker exec pydigestor-app uv run pydigestor rebuild-fts-index
+```
+
+### Database Commands
+
+```bash
+# Access SQLite database directly
+docker exec pydigestor-app sqlite3 /app/data/pydigestor.db
+
+# List all articles
+docker exec pydigestor-app sqlite3 /app/data/pydigestor.db "SELECT id, title, status FROM articles LIMIT 10;"
+
+# Count articles by status
+docker exec pydigestor-app sqlite3 /app/data/pydigestor.db "SELECT status, COUNT(*) FROM articles GROUP BY status;"
+
+# Export database
+docker cp pydigestor-app:/app/data/pydigestor.db ./backup.db
+```
+
+## Search Examples
+
+### FTS5 Full-Text Search
+
+FTS5 provides fast keyword search with porter stemming and boolean operators:
+
+```bash
+# Simple keyword search
+docker exec pydigestor-app uv run pydigestor search "kubernetes"
+
+# Multiple keywords (implicit AND)
+docker exec pydigestor-app uv run pydigestor search "zero day exploit"
+
+# Phrase search
+docker exec pydigestor-app uv run pydigestor search '"supply chain attack"'
+
+# Boolean operators
+docker exec pydigestor-app uv run pydigestor search "kubernetes OR docker"
+docker exec pydigestor-app uv run pydigestor search "security NOT wordpress"
+```
+
+**Output:**
+```
+Search Results (3 of 12)
+Query: kubernetes
+
+┏┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃┃ Title                        ┃ Snippet
+┡╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+││ Critical K8s Vulnerability   │ ...new <mark>Kubernetes</mark> CVE-2024-...
+││ Securing Container Workloads │ ...deploy <mark>Kubernetes</mark> security...
+││ Cloud Native Security Guide  │ ...<mark>Kubernetes</mark> best practices...
+└┴──────────────────────────────┴─────────────────────────────────────────
+```
+
+### TF-IDF Ranked Search
+
+TF-IDF provides domain-adaptive ranked search with similarity scores:
+
+```bash
+# Build index from your articles (one-time or periodic)
+docker exec pydigestor-app uv run pydigestor build-tfidf-index
+
+# Ranked search with scores
+docker exec pydigestor-app uv run pydigestor tfidf-search "machine learning security"
+
+# Higher score threshold (more relevant results)
+docker exec pydigestor-app uv run pydigestor tfidf-search "ransomware" --min-score 0.2
+```
+
+**Output:**
+```
+TF-IDF Search Results (5 of 27)
+Query: ransomware attack
+
+┏┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃┃ Title                        ┃ Score ┃ Summary
+┡╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+││ Lockbit Ransomware Analysis  │ 0.847 │ Detailed analysis of Lockbit...
+││ 2024 Ransomware Trends       │ 0.623 │ Annual report on ransomware...
+││ Healthcare Security Breach   │ 0.412 │ Hospital systems targeted...
+└┴──────────────────────────────┴───────┴────────────────────────────────
+```
+
+**TF-IDF Features:**
+- Learns vocabulary from YOUR articles (domain-adaptive)
+- Ranks by relevance (cosine similarity scores)
+- Supports phrase matching (1-3 word n-grams)
+- Transparent rankings (can inspect which terms matched)
+
+### View Top Terms
+
+See what terms are most distinctive in your corpus:
+
+```bash
+docker exec pydigestor-app uv run pydigestor tfidf-terms --n 20
+```
+
+**Output:**
+```
+Top 20 TF-IDF Terms
+
+┏┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┓
+┃┃ Term               ┃ Importance  ┃
+┡╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━┩
+││ zero day           │ 4.23        │
+││ cve                │ 3.87        │
+││ ransomware         │ 3.45        │
+││ kubernetes         │ 2.91        │
+││ supply chain       │ 2.78        │
+└┴────────────────────┴─────────────┘
 ```
 
 ## Development Workflow
@@ -110,13 +252,18 @@ docker-compose logs -f app
 # Shell into app container
 docker exec -it pydigestor-app bash
 
-# Access database
-docker exec -it pydigestor-db psql -U pydigestor -d pydigestor
+# Access SQLite database
+docker exec -it pydigestor-app sqlite3 /app/data/pydigestor.db
 
 # Stop services
 docker-compose down
 
 # Rebuild after code changes
+docker-compose up -d --build
+
+# Clean rebuild (removes database)
+docker-compose down -v
+rm -rf data/pydigestor.db
 docker-compose up -d --build
 ```
 
@@ -125,20 +272,29 @@ docker-compose up -d --build
 Key settings in `.env`:
 
 ```bash
-# Database (automatically set by docker-compose)
-DATABASE_URL=postgresql://pydigestor:pydigestor_dev@db:5432/pydigestor
+# Database (SQLite file path)
+DATABASE_URL=sqlite:///./data/pydigestor.db
 
-# LLM (Phase 2 - not yet implemented)
+# LLM (Phase 2 - optional, not yet enabled)
 # ANTHROPIC_API_KEY=sk-ant-...
-# ENABLE_TRIAGE=true
-# ENABLE_EXTRACTION=true
+# ENABLE_TRIAGE=false
+# ENABLE_EXTRACTION=false
 
-# Feeds
+# Feed Sources
 RSS_FEEDS=["https://krebsonsecurity.com/feed/"]
 REDDIT_SUBREDDITS=["netsec"]
 
-# Summarization
+# Reddit Configuration
+REDDIT_SORT=new
+REDDIT_LIMIT=100
+REDDIT_MAX_AGE_HOURS=24
+REDDIT_MIN_SCORE=0
+
+# Summarization (local, no API costs)
+AUTO_SUMMARIZE=true
 SUMMARIZATION_METHOD=lexrank
+SUMMARY_MIN_SENTENCES=3
+SUMMARY_MAX_SENTENCES=8
 ```
 
 See [docs/feed sources.md](docs/feed%20sources.md) for recommended feeds.
@@ -149,35 +305,44 @@ See [docs/feed sources.md](docs/feed%20sources.md) for recommended feeds.
 pyDigestor/
 ├── docker/
 │   ├── Dockerfile              # App container
-│   ├── docker-compose.yml      # Multi-container setup
-│   └── entrypoint.sh           # Container startup script
-├── src/pydigestor/             # Main application code
+│   ├── docker-compose.yml      # Container setup
+│   └── entrypoint.sh           # Startup script with migrations
+├── src/pydigestor/
 │   ├── cli.py                  # CLI interface
 │   ├── config.py               # Configuration
-│   ├── database.py             # Database connection
+│   ├── database.py             # SQLite connection
 │   ├── models.py               # SQLModel models
-│   ├── sources/                # Feed sources
-│   ├── steps/                  # Pipeline steps
+│   ├── sources/                # Feed sources (RSS, Reddit)
+│   ├── steps/                  # Pipeline steps (ingest, summarize)
+│   ├── search/                 # Search implementations (FTS5, TF-IDF)
 │   └── utils/                  # Utilities
 ├── tests/                      # Test suite
 ├── alembic/                    # Database migrations
 ├── docs/                       # Documentation
+├── data/                       # SQLite database (volume-mounted)
 └── pyproject.toml              # Python dependencies
 ```
 
 ## Development Status
 
-**Current phase:** Phase 1 - Core Pipeline (Day 1-2: Project Setup)
-**Timeline:** 4 weeks to production
-**Status:** ✅ Project structure complete, Docker setup ready
+**Current phase:** Phase 1 Complete - Core Pipeline with Search
+**Status:** ✅ Production-ready for local content aggregation and search
 
-### Phase 1: Core Pipeline (Weeks 1-2)
-- [x] Day 1-2: Project setup, Docker, database, models
-- [ ] Day 3-4: RSS/Atom feed parsing
-- [ ] Day 5: Basic content extraction
-- [ ] Day 6-7: Reddit integration
-- [ ] Day 8-9: Advanced extraction (PDF, GitHub, patterns)
-- [ ] Day 10: Local summarization
+### Completed Features
+- ✅ Project setup, Docker, SQLite database
+- ✅ RSS/Atom feed parsing
+- ✅ Reddit integration with filtering
+- ✅ Advanced extraction (PDF, GitHub, arXiv patterns)
+- ✅ Local summarization (LexRank/TextRank/LSA)
+- ✅ FTS5 full-text search with porter stemming
+- ✅ TF-IDF domain-adaptive ranked search
+- ✅ Query sanitization and error handling
+- ✅ Lightweight architecture (removed PyTorch, 808MB image)
+
+### Phase 2: LLM Integration (Optional)
+- [ ] Claude-based triage (Haiku for keep/discard decisions)
+- [ ] Signal extraction (Sonnet for structured insights)
+- [ ] Cost-optimized LLM usage (~$0.42/month estimated)
 
 See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for complete roadmap.
 
@@ -197,14 +362,40 @@ docker exec pydigestor-app uv run pytest tests/test_models.py
 docker exec pydigestor-app uv run pytest -v -s
 ```
 
+## Search Architecture
+
+### FTS5 (Fast Keyword Search)
+
+- **Technology**: SQLite FTS5 with porter stemming
+- **Indexing**: Automatic via triggers on INSERT/UPDATE/DELETE
+- **Query Features**: Boolean operators, phrase search, prefix matching
+- **Speed**: Milliseconds for keyword lookup
+- **Best for**: Known keywords, CVE numbers, exact phrases
+
+### TF-IDF (Ranked Retrieval)
+
+- **Technology**: scikit-learn TfidfVectorizer with cosine similarity
+- **Indexing**: Manual build (one-time or periodic)
+- **Query Features**: Relevance ranking, similarity scores, n-gram phrases
+- **Speed**: Sub-second for <10K articles
+- **Best for**: Exploratory search, topic discovery, ranked results
+
+**When to use which:**
+- **FTS5**: "Find articles mentioning CVE-2024-1234"
+- **TF-IDF**: "What are the most relevant articles about ransomware trends?"
+
 ## Cost Analysis
 
-**Monthly costs (Phase 2):**
+**Phase 1 (Current): $0/month**
+- All processing is local (no API calls)
+- SQLite database (no hosting costs)
+- Summarization via sumy (local)
+- Search via FTS5 + TF-IDF (local)
+
+**Phase 2 (Optional LLM): ~$0.42/month**
 - Triage (Haiku): ~$0.05
 - Signal extraction (Sonnet): ~$0.37
-- **Total: ~$0.42/month**
-
-Local summarization is free (no API calls).
+- Based on ~100 articles/month
 
 ## Documentation
 
