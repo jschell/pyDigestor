@@ -1,10 +1,31 @@
 """Database models for pyDigestor."""
 
+import json
 from datetime import datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from sqlmodel import Column, Field, JSON, SQLModel
+from sqlmodel import Column, Field, SQLModel
+from sqlalchemy import Text, ForeignKey, TypeDecorator
+
+
+class JSONText(TypeDecorator):
+    """Custom type to store JSON as TEXT in SQLite."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """Serialize dict to JSON string before storing."""
+        if value is not None:
+            return json.dumps(value)
+        return None
+
+    def process_result_value(self, value, dialect):
+        """Deserialize JSON string to dict when retrieving."""
+        if value is not None:
+            return json.loads(value)
+        return None
 
 
 class Article(SQLModel, table=True):
@@ -12,7 +33,11 @@ class Article(SQLModel, table=True):
 
     __tablename__ = "articles"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    # UUID stored as TEXT in SQLite
+    id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        sa_column=Column(Text, primary_key=True),
+    )
     source_id: str = Field(unique=True, index=True, description="Unique ID from source")
     url: str = Field(description="Target URL (actual content location)")
     title: str = Field(description="Article title")
@@ -24,9 +49,10 @@ class Article(SQLModel, table=True):
         default="pending",
         description="Processing status: pending, triaged, processed, failed",
     )
+    # JSON stored as TEXT in SQLite with automatic serialization
     meta: dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=Column(JSON),
+        sa_column=Column(JSONText),
         description="Feed source, Reddit score, extraction method, etc.",
     )
 
@@ -39,8 +65,14 @@ class TriageDecision(SQLModel, table=True):
 
     __tablename__ = "triage_decisions"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    article_id: UUID = Field(foreign_key="articles.id", index=True)
+    # UUID stored as TEXT in SQLite
+    id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        sa_column=Column(Text, primary_key=True),
+    )
+    article_id: str = Field(
+        sa_column=Column(Text, ForeignKey("articles.id"), index=True),
+    )
     keep: bool = Field(description="Whether to keep this article")
     reasoning: str | None = Field(default=None, description="LLM reasoning for decision")
     confidence: float | None = Field(
@@ -57,8 +89,14 @@ class Signal(SQLModel, table=True):
 
     __tablename__ = "signals"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    article_id: UUID = Field(foreign_key="articles.id", index=True)
+    # UUID stored as TEXT in SQLite
+    id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        sa_column=Column(Text, primary_key=True),
+    )
+    article_id: str = Field(
+        sa_column=Column(Text, ForeignKey("articles.id"), index=True),
+    )
     signal_type: str = Field(
         index=True,
         description="Type: vulnerability, tool, technique, trend, threat_actor, etc.",
@@ -67,9 +105,10 @@ class Signal(SQLModel, table=True):
     confidence: float | None = Field(
         default=None, description="Confidence score (0-1)", ge=0, le=1
     )
+    # JSON stored as TEXT in SQLite with automatic serialization
     meta: dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=Column(JSON),
+        sa_column=Column(JSONText),
         description="Additional signal metadata",
     )
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)

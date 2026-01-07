@@ -19,8 +19,8 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="postgresql://pydigestor:pydigestor_dev@localhost:5432/pydigestor",
-        description="PostgreSQL connection URL",
+        default="sqlite:///./data/pydigestor.db",
+        description="SQLite database path",
     )
 
     # Feature Flags (Phase 1 - LLM features disabled)

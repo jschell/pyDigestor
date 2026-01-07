@@ -1,9 +1,8 @@
 FROM python:3.13-slim
 
-# Install system dependencies
+# Install sqlite3 CLI for database inspection
 RUN apt-get update && apt-get install -y \
-    postgresql-client \
-    curl \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -20,8 +19,11 @@ COPY tests ./tests
 COPY alembic ./alembic
 COPY alembic.ini .
 
-# Install dependencies with uv
-RUN uv sync
+# Install dependencies with uv and clean cache to reduce image size
+RUN uv sync && rm -rf /root/.cache/uv
+
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
 
 # Copy entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh

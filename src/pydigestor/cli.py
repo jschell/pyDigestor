@@ -14,6 +14,8 @@ from pydigestor.database import get_session
 from pydigestor.models import Article, Signal, TriageDecision
 from pydigestor.steps.ingest import IngestStep
 from pydigestor.steps.summarize import SummarizationStep
+from pydigestor.search.fts import FTS5Search, FTS5SearchError
+from pydigestor.search.tfidf import TfidfSearch
 
 app = typer.Typer(
     name="pydigestor",
@@ -164,6 +166,269 @@ def summarize(
             console.print("[yellow]⚠[/yellow] No articles were summarized and errors occurred")
             raise typer.Exit(code=1)
 
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Search query (supports AND, OR, NOT, \"phrases\")"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of results"),
+):
+    """Search articles using keyword search (FTS5)."""
+    try:
+        session = next(get_session())
+        searcher = FTS5Search()
+
+        # Get total count
+        total = searcher.count_results(session, query)
+
+        if total == 0:
+            console.print(f"\n[yellow]No results found for:[/yellow] {query}\n")
+            return
+
+        # Get results
+        results = searcher.search(session, query, limit=limit)
+
+        # Display results
+        console.print(f"\n[bold cyan]Search Results[/bold cyan] ({len(results)} of {total})")
+        console.print(f"[dim]Query:[/dim] {query}\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title", style="cyan", width=50)
+        table.add_column("Snippet", style="white", width=60)
+        table.add_column("Rank", justify="right", style="green", width=8)
+
+        for idx, result in enumerate(results, 1):
+            # Truncate title if too long
+            title = result.title[:47] + "..." if len(result.title) > 50 else result.title
+            # Clean snippet (remove extra newlines)
+            snippet = " ".join(result.snippet.split())
+            snippet = snippet[:57] + "..." if len(snippet) > 60 else snippet
+
+            table.add_row(
+                str(idx),
+                title,
+                snippet,
+                f"{result.rank:.3f}"
+            )
+
+        console.print(table)
+        console.print()
+
+    except FTS5SearchError as e:
+        console.print(f"\n[bold yellow]Invalid Query Syntax:[/bold yellow]\n{e}\n")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def rebuild_fts_index():
+    """Rebuild FTS5 search index from all articles in database."""
+    try:
+        console.print("\n[bold]Rebuilding FTS5 Index[/bold]\n")
+
+        session = next(get_session())
+
+        # Drop and recreate FTS table with triggers
+        from sqlalchemy import text
+
+        console.print("[blue]Dropping old FTS table and triggers...[/blue]")
+        session.execute(text("DROP TRIGGER IF EXISTS articles_fts_insert"))
+        session.execute(text("DROP TRIGGER IF EXISTS articles_fts_update"))
+        session.execute(text("DROP TRIGGER IF EXISTS articles_fts_delete"))
+        session.execute(text("DROP TABLE IF EXISTS articles_fts"))
+
+        console.print("[blue]Creating new FTS table...[/blue]")
+        session.execute(text("""
+            CREATE VIRTUAL TABLE articles_fts USING fts5(
+                article_id UNINDEXED,
+                title,
+                content,
+                summary,
+                content='',
+                tokenize='porter unicode61'
+            )
+        """))
+
+        console.print("[blue]Creating triggers...[/blue]")
+        # Recreate triggers
+        session.execute(text("""
+            CREATE TRIGGER articles_fts_insert AFTER INSERT ON articles
+            BEGIN
+                INSERT INTO articles_fts(article_id, title, content, summary)
+                VALUES (
+                    new.id,
+                    new.title,
+                    COALESCE(new.content, ''),
+                    COALESCE(new.summary, '')
+                );
+            END
+        """))
+
+        session.execute(text("""
+            CREATE TRIGGER articles_fts_update AFTER UPDATE ON articles
+            BEGIN
+                DELETE FROM articles_fts WHERE article_id = old.id;
+                INSERT INTO articles_fts(article_id, title, content, summary)
+                VALUES (
+                    new.id,
+                    new.title,
+                    COALESCE(new.content, ''),
+                    COALESCE(new.summary, '')
+                );
+            END
+        """))
+
+        session.execute(text("""
+            CREATE TRIGGER articles_fts_delete AFTER DELETE ON articles
+            BEGIN
+                DELETE FROM articles_fts WHERE article_id = old.id;
+            END
+        """))
+
+        console.print("[blue]Populating FTS index from existing articles...[/blue]")
+        # Manually populate for existing articles
+        result = session.execute(text("""
+            INSERT INTO articles_fts(article_id, title, content, summary)
+            SELECT id, title, COALESCE(content, ''), COALESCE(summary, '')
+            FROM articles
+        """))
+
+        session.commit()
+
+        # Get counts
+        article_count = session.execute(text("SELECT COUNT(*) FROM articles")).scalar()
+        fts_count = session.execute(text("SELECT COUNT(*) FROM articles_fts")).scalar()
+
+        console.print(f"\n[green]✓[/green] FTS index rebuilt successfully")
+        console.print(f"[green]✓[/green] Indexed {fts_count} articles (total in DB: {article_count})\n")
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def build_tfidf_index(
+    max_features: int = typer.Option(5000, "--max-features", help="Maximum vocabulary size"),
+    min_df: int = typer.Option(2, "--min-df", help="Minimum document frequency"),
+):
+    """Build TF-IDF index from all articles in database."""
+    try:
+        console.print("\n[bold]Building TF-IDF Index[/bold]\n")
+
+        session = next(get_session())
+        searcher = TfidfSearch()
+
+        # Build index
+        stats = searcher.build_index(session, min_df=min_df, max_features=max_features)
+
+        if "error" in stats:
+            console.print(f"[red]Error:[/red] {stats['error']}\n")
+            raise typer.Exit(code=1)
+
+        # Display statistics
+        console.print(f"[green]✓[/green] Indexed {stats['num_articles']} articles")
+        console.print(f"[green]✓[/green] Vocabulary size: {stats['vocabulary_size']} terms")
+        console.print(f"[dim]Index saved to: {searcher.index_path}[/dim]\n")
+
+        # Show top terms
+        console.print("[bold]Top 10 Terms by Importance:[/bold]")
+        top_terms = searcher.get_top_terms(10)
+        for term, score in top_terms:
+            console.print(f"  • {term}: {score:.4f}")
+        console.print()
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def tfidf_search(
+    query: str = typer.Argument(..., help="Search query for ranked retrieval"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of results"),
+    min_score: float = typer.Option(0.0, "--min-score", help="Minimum similarity score (0-1)"),
+):
+    """Search articles using TF-IDF ranked retrieval."""
+    try:
+        session = next(get_session())
+        searcher = TfidfSearch()
+
+        # Search
+        results = searcher.search(session, query, limit=limit, min_score=min_score)
+
+        if not results:
+            console.print(f"\n[yellow]No results found for:[/yellow] {query}\n")
+            return
+
+        # Display results
+        console.print(f"\n[bold cyan]TF-IDF Search Results[/bold cyan] ({len(results)} results)")
+        console.print(f"[dim]Query:[/dim] {query}\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title", style="cyan", width=50)
+        table.add_column("Summary", style="white", width=60)
+        table.add_column("Score", justify="right", style="green", width=8)
+
+        for idx, result in enumerate(results, 1):
+            # Truncate title and summary if too long
+            title = result.title[:47] + "..." if len(result.title) > 50 else result.title
+            summary = result.summary[:57] + "..." if len(result.summary) > 60 else result.summary
+
+            table.add_row(
+                str(idx),
+                title,
+                summary,
+                f"{result.score:.3f}"
+            )
+
+        console.print(table)
+        console.print()
+
+    except ValueError as e:
+        console.print(f"\n[yellow]Note:[/yellow] {e}")
+        console.print("[dim]Run 'pydigestor build-tfidf-index' to create the index.[/dim]\n")
+        raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def tfidf_terms(
+    n: int = typer.Option(20, "--limit", "-n", help="Number of top terms to show"),
+):
+    """Show top terms in TF-IDF vocabulary (useful for understanding corpus)."""
+    try:
+        searcher = TfidfSearch()
+
+        top_terms = searcher.get_top_terms(n)
+
+        console.print(f"\n[bold cyan]Top {n} Terms by Average TF-IDF Score[/bold cyan]\n")
+        console.print("[dim]These terms are most important/distinctive in your corpus.[/dim]\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Rank", style="dim", width=5)
+        table.add_column("Term", style="cyan", width=40)
+        table.add_column("Avg Score", justify="right", style="green", width=12)
+
+        for idx, (term, score) in enumerate(top_terms, 1):
+            table.add_row(str(idx), term, f"{score:.6f}")
+
+        console.print(table)
+        console.print()
+
+    except ValueError as e:
+        console.print(f"\n[yellow]Note:[/yellow] {e}")
+        console.print("[dim]Run 'pydigestor build-tfidf-index' to create the index.[/dim]\n")
+        raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"\n[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)

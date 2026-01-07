@@ -187,6 +187,7 @@ class IngestStep:
         session.add(article)
         session.commit()
         session.refresh(article)  # Get the generated ID
+
         console.print(f"[green]✓[/green] Stored: {entry.title[:60]}...")
 
         return article.id

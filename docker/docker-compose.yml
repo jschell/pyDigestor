@@ -1,47 +1,16 @@
 services:
-  db:
-    image: postgres:16
-    container_name: pydigestor-db
-    environment:
-      POSTGRES_USER: pydigestor
-      POSTGRES_PASSWORD: pydigestor_dev
-      POSTGRES_DB: pydigestor
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pydigestor"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - pydigestor-network
-
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: pydigestor-app
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://pydigestor:pydigestor_dev@db:5432/pydigestor
+      - DATABASE_URL=sqlite:////app/data/pydigestor.db
     env_file:
       - ../.env
     volumes:
       - ../src:/app/src
       - ../tests:/app/tests
       - ../alembic:/app/alembic
+      - ../data:/app/data
     command: tail -f /dev/null
-    networks:
-      - pydigestor-network
-
-volumes:
-  pgdata:
-    driver: local
-
-networks:
-  pydigestor-network:
-    driver: bridge

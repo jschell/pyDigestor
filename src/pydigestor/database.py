@@ -6,11 +6,15 @@ from sqlmodel import Session, create_engine
 
 from pydigestor.config import settings
 
-# Create database engine
+# Create database engine with SQLite-specific settings
+connect_args = {}
+if settings.database_url.startswith("sqlite"):
+    connect_args["check_same_thread"] = False  # Allow multi-threaded access
+
 engine = create_engine(
     settings.database_url,
     echo=settings.enable_debug,  # Log SQL queries in debug mode
-    pool_pre_ping=True,  # Verify connections before using
+    connect_args=connect_args,
 )
 
 
