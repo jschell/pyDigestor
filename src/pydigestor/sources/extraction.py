@@ -1,7 +1,9 @@
 """Content extraction from URLs using trafilatura and newspaper3k."""
 
+import io
 import json
 import random
+import re
 import string
 import time
 import warnings
@@ -12,6 +14,7 @@ from urllib.parse import urlparse
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 import httpx
+import pdfplumber
 import trafilatura
 from bs4 import BeautifulSoup
 from newspaper import Article as NewspaperArticle
@@ -88,6 +91,24 @@ class ContentExtractor:
                 self.metrics["failures"] += 1
                 return None, original_url
 
+        # Convert arXiv abstract URLs to PDF URLs
+        url = self._convert_arxiv_to_pdf(url)
+
+        # Check if this is a PDF URL
+        if self._is_pdf_url(url):
+            console.print(f"[dim]→ Detected PDF URL, attempting PDF extraction[/dim]")
+            content = self._extract_pdf(url)
+            if content:
+                self.metrics["total_attempts"] += 1
+                self.metrics["trafilatura_success"] += 1  # Count as success
+                return content, url
+            # PDF extraction failed, but don't try other methods on PDFs
+            self.failed_urls.add(original_url)
+            self.metrics["total_attempts"] += 1
+            self.metrics["failures"] += 1
+            console.print(f"[yellow]⚠[/yellow] Failed to extract PDF from {url[:60]}...")
+            return None, original_url
+
         self.metrics["total_attempts"] += 1
 
         # Try trafilatura first
@@ -109,6 +130,109 @@ class ContentExtractor:
         self.metrics["failures"] += 1
         console.print(f"[yellow]⚠[/yellow] Failed to extract content from {url[:60]}...")
         return None, original_url
+
+    def _is_pdf_url(self, url: str) -> bool:
+        """
+        Check if URL points to a PDF file.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL appears to be a PDF
+        """
+        return url.lower().endswith('.pdf') or '/pdf/' in url.lower()
+
+    def _convert_arxiv_to_pdf(self, url: str) -> str:
+        """
+        Convert arXiv abstract URL to PDF URL.
+
+        Args:
+            url: Original URL (may be abstract page)
+
+        Returns:
+            PDF URL if arXiv abstract, otherwise original URL
+
+        Examples:
+            https://arxiv.org/abs/2501.02496 -> https://arxiv.org/pdf/2501.02496.pdf
+        """
+        # Match arXiv abstract URLs
+        arxiv_pattern = r'https?://arxiv\.org/abs/(\d+\.\d+)'
+        match = re.match(arxiv_pattern, url)
+
+        if match:
+            paper_id = match.group(1)
+            pdf_url = f"https://arxiv.org/pdf/{paper_id}.pdf"
+            console.print(f"[dim]→ Converting arXiv abstract to PDF: {pdf_url}[/dim]")
+            return pdf_url
+
+        return url
+
+    def _extract_pdf(self, url: str) -> Optional[str]:
+        """
+        Download and extract text from a PDF URL.
+
+        Args:
+            url: URL of the PDF file
+
+        Returns:
+            Extracted text content or None if failed
+        """
+        try:
+            console.print(f"[blue]Downloading PDF:[/blue] {url[:60]}...")
+
+            # Download PDF
+            response = httpx.get(
+                url,
+                timeout=30,  # PDFs can be large
+                follow_redirects=True,
+                headers={"User-Agent": "pyDigestor/0.1.0"}
+            )
+            response.raise_for_status()
+
+            # Check if response is actually a PDF
+            content_type = response.headers.get('content-type', '').lower()
+            if 'pdf' not in content_type and not url.endswith('.pdf'):
+                console.print(f"[yellow]⚠[/yellow] Response is not a PDF (content-type: {content_type})")
+                return None
+
+            # Extract text from PDF
+            pdf_bytes = io.BytesIO(response.content)
+            text_parts = []
+
+            with pdfplumber.open(pdf_bytes) as pdf:
+                total_pages = len(pdf.pages)
+                console.print(f"[dim]→ Extracting text from {total_pages} pages[/dim]")
+
+                for page_num, page in enumerate(pdf.pages, 1):
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+
+                    # Show progress for large PDFs
+                    if page_num % 10 == 0:
+                        console.print(f"[dim]→ Processed {page_num}/{total_pages} pages[/dim]")
+
+            # Combine all pages
+            full_text = '\n'.join(text_parts)
+
+            # Validate extracted text
+            if len(full_text.strip()) < 500:
+                console.print(f"[yellow]⚠[/yellow] PDF extraction produced minimal text ({len(full_text)} chars)")
+                return None
+
+            console.print(f"[green]✓[/green] Extracted {len(full_text)} characters from PDF ({total_pages} pages)")
+            return full_text.strip()
+
+        except httpx.TimeoutException:
+            console.print(f"[yellow]⏱[/yellow] Timeout downloading PDF: {url[:60]}...")
+            return None
+        except httpx.HTTPError as e:
+            console.print(f"[yellow]HTTP error downloading PDF:[/yellow] {url[:60]}... - {e}")
+            return None
+        except Exception as e:
+            console.print(f"[yellow]Error extracting PDF:[/yellow] {url[:60]}... - {e}")
+            return None
 
     def _generate_medium_cookies(self) -> str:
         """
