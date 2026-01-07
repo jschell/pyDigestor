@@ -1,11 +1,31 @@
 """Database models for pyDigestor."""
 
+import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from sqlmodel import Column, Field, SQLModel
-from sqlalchemy import Text, ForeignKey
+from sqlalchemy import Text, ForeignKey, TypeDecorator
+
+
+class JSONText(TypeDecorator):
+    """Custom type to store JSON as TEXT in SQLite."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """Serialize dict to JSON string before storing."""
+        if value is not None:
+            return json.dumps(value)
+        return None
+
+    def process_result_value(self, value, dialect):
+        """Deserialize JSON string to dict when retrieving."""
+        if value is not None:
+            return json.loads(value)
+        return None
 
 
 class Article(SQLModel, table=True):
@@ -29,10 +49,10 @@ class Article(SQLModel, table=True):
         default="pending",
         description="Processing status: pending, triaged, processed, failed",
     )
-    # JSON stored as TEXT in SQLite
+    # JSON stored as TEXT in SQLite with automatic serialization
     meta: dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=Column(Text),
+        sa_column=Column(JSONText),
         description="Feed source, Reddit score, extraction method, etc.",
     )
 
@@ -85,10 +105,10 @@ class Signal(SQLModel, table=True):
     confidence: float | None = Field(
         default=None, description="Confidence score (0-1)", ge=0, le=1
     )
-    # JSON stored as TEXT in SQLite
+    # JSON stored as TEXT in SQLite with automatic serialization
     meta: dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=Column(Text),
+        sa_column=Column(JSONText),
         description="Additional signal metadata",
     )
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
