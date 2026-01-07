@@ -14,9 +14,3 @@ services:
       - ../alembic:/app/alembic
       - ../data:/app/data
     command: tail -f /dev/null
-    networks:
-      - pydigestor-network
-
-networks:
-  pydigestor-network:
-    driver: bridge
