@@ -1,9 +1,10 @@
 FROM python:3.13-slim
 
-# Install system dependencies for sqlite-vec compilation
+# Install system dependencies for sqlite-vec compilation and CLI tools
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
