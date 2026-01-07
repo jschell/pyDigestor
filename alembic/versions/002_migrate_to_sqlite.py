@@ -81,14 +81,6 @@ def upgrade() -> None:
         );
     """)
 
-    # Create sqlite-vec virtual table for vector embeddings
-    op.execute("""
-        CREATE VIRTUAL TABLE article_embeddings USING vec0(
-            article_id TEXT PRIMARY KEY,
-            embedding FLOAT[384]
-        );
-    """)
-
     # Create triggers to keep FTS5 in sync with articles table
     op.execute("""
         CREATE TRIGGER articles_fts_insert AFTER INSERT ON articles
