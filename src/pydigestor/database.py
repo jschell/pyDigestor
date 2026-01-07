@@ -2,7 +2,8 @@
 
 from collections.abc import Generator
 
-from sqlmodel import Session, create_engine, event
+from sqlmodel import Session, create_engine
+from sqlalchemy import event
 
 from pydigestor.config import settings
 
