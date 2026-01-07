@@ -14,6 +14,7 @@ from pydigestor.database import get_session
 from pydigestor.models import Article, Signal, TriageDecision
 from pydigestor.steps.ingest import IngestStep
 from pydigestor.steps.summarize import SummarizationStep
+from pydigestor.search.fts import FTS5Search
 
 app = typer.Typer(
     name="pydigestor",
@@ -163,6 +164,58 @@ def summarize(
         if metrics["summarized"] == 0 and metrics["errors"] > 0:
             console.print("[yellow]⚠[/yellow] No articles were summarized and errors occurred")
             raise typer.Exit(code=1)
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Search query (supports AND, OR, NOT, \"phrases\")"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of results"),
+):
+    """Search articles using keyword search (FTS5)."""
+    try:
+        session = next(get_session())
+        searcher = FTS5Search()
+
+        # Get total count
+        total = searcher.count_results(session, query)
+
+        if total == 0:
+            console.print(f"\n[yellow]No results found for:[/yellow] {query}\n")
+            return
+
+        # Get results
+        results = searcher.search(session, query, limit=limit)
+
+        # Display results
+        console.print(f"\n[bold cyan]Search Results[/bold cyan] ({len(results)} of {total})")
+        console.print(f"[dim]Query:[/dim] {query}\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title", style="cyan", width=50)
+        table.add_column("Snippet", style="white", width=60)
+        table.add_column("Rank", justify="right", style="green", width=8)
+
+        for idx, result in enumerate(results, 1):
+            # Truncate title if too long
+            title = result.title[:47] + "..." if len(result.title) > 50 else result.title
+            # Clean snippet (remove extra newlines)
+            snippet = " ".join(result.snippet.split())
+            snippet = snippet[:57] + "..." if len(snippet) > 60 else snippet
+
+            table.add_row(
+                str(idx),
+                title,
+                snippet,
+                f"{result.rank:.3f}"
+            )
+
+        console.print(table)
+        console.print()
 
     except Exception as e:
         console.print(f"\n[bold red]Error:[/bold red] {e}")
