@@ -21,8 +21,8 @@ COPY tests ./tests
 COPY alembic ./alembic
 COPY alembic.ini .
 
-# Install dependencies with uv
-RUN uv sync
+# Install dependencies with uv and clean cache to reduce image size
+RUN uv sync && rm -rf /root/.cache/uv
 
 # Create data directory for SQLite database
 RUN mkdir -p /app/data

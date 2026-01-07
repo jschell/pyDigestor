@@ -1,0 +1,36 @@
+# Git repository (can be large)
+.git/
+.gitignore
+
+# Documentation files (not needed at runtime)
+docs/
+*.md
+!README.md
+
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Runtime data (mounted as volume)
+data/
+
+# Environment file (should be provided via env_file in docker-compose)
+.env
+
+# CI/CD
+.github/
