@@ -32,6 +32,8 @@ class TestContentExtractor:
         mock_response = Mock()
         mock_response.content = b"<html>Article content</html>"
         mock_response.raise_for_status = Mock()
+        mock_response.text = "<html>Article content</html>"
+        mock_response.url = "https://example.com/article"  # Mock final URL
         mock_get.return_value = mock_response
 
         # Mock trafilatura extraction
@@ -57,6 +59,8 @@ class TestContentExtractor:
         mock_response = Mock()
         mock_response.content = b"<html>Article content</html>"
         mock_response.raise_for_status = Mock()
+        mock_response.text = "<html>Article content</html>"
+        mock_response.url = "https://example.com/article"  # Mock final URL
         mock_get.return_value = mock_response
 
         # Mock trafilatura to return short content (fails validation)
@@ -65,6 +69,7 @@ class TestContentExtractor:
         # Mock newspaper3k extraction
         mock_article = Mock()
         mock_article.text = "This is a long article content from newspaper3k that is definitely more than 100 characters to pass validation."
+        mock_article.url = "https://example.com/article"  # Mock article URL
         mock_newspaper_class.return_value = mock_article
 
         extractor = ContentExtractor()

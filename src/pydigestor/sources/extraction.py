@@ -91,18 +91,18 @@ class ContentExtractor:
         self.metrics["total_attempts"] += 1
 
         # Try trafilatura first
-        content = self._extract_with_trafilatura(url)
+        content, final_url = self._extract_with_trafilatura(url)
         if content:
             self.metrics["trafilatura_success"] += 1
-            # Return resolved URL only for Lemmy, otherwise return original
-            return content, url if was_lemmy else original_url
+            # For Lemmy, use the resolved destination; for others, use final URL from extraction
+            return content, url if was_lemmy else final_url
 
         # Fallback to newspaper3k
-        content = self._extract_with_newspaper(url)
+        content, final_url = self._extract_with_newspaper(url)
         if content:
             self.metrics["newspaper_success"] += 1
-            # Return resolved URL only for Lemmy, otherwise return original
-            return content, url if was_lemmy else original_url
+            # For Lemmy, use the resolved destination; for others, use final URL from extraction
+            return content, url if was_lemmy else final_url
 
         # Both methods failed - cache the URL
         self.failed_urls.add(original_url)
@@ -423,7 +423,7 @@ class ContentExtractor:
             console.print(f"[yellow]⚠[/yellow] Error resolving Lemmy URL: {e}")
             return None
 
-    def _extract_with_trafilatura(self, url: str) -> Optional[str]:
+    def _extract_with_trafilatura(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """
         Extract content using trafilatura.
 
@@ -431,7 +431,7 @@ class ContentExtractor:
             url: URL to extract from
 
         Returns:
-            Extracted content or None if failed
+            Tuple of (extracted content or None if failed, final URL after redirects)
         """
         try:
             # Check if this is a Medium URL
@@ -442,12 +442,14 @@ class ContentExtractor:
 
             html_content = None
             fetch_url = url
+            final_url = url
 
             # Special handling for Medium URLs
             if is_medium:
                 # Step 1: Resolve canonical URL (handles /p/ redirects and extracts HTML)
                 canonical_url, initial_html = self._resolve_medium_canonical(url, headers)
                 html_content = initial_html
+                final_url = canonical_url  # Use canonical URL as final URL
 
                 # Step 2: Classify URL type
                 url_type = self._classify_medium_url(canonical_url)
@@ -459,7 +461,7 @@ class ContentExtractor:
                 if html_content:
                     json_content = self._extract_from_json_ld(html_content)
                     if json_content:
-                        return json_content
+                        return json_content, final_url
 
                 # If canonical differs from fetch_url, need to re-fetch
                 if fetch_url != canonical_url and url_type == "standard":
@@ -471,12 +473,15 @@ class ContentExtractor:
                 response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
+                final_url = str(response.url)  # Capture final URL after redirects
 
             # If we don't have HTML yet, fetch it
             if not html_content:
                 response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
+                if not is_medium:
+                    final_url = str(response.url)  # Capture final URL after redirects
 
             # Extract with trafilatura
             content = trafilatura.extract(
@@ -488,21 +493,21 @@ class ContentExtractor:
 
             # Validate content
             if content and len(content.strip()) > 100:
-                return content.strip()
+                return content.strip(), final_url
 
-            return None
+            return None, final_url
 
         except httpx.TimeoutException:
             console.print(f"[yellow]⏱[/yellow] Timeout extracting (trafilatura): {url[:60]}...")
-            return None
+            return None, url
         except httpx.HTTPError as e:
             console.print(f"[yellow]HTTP error (trafilatura):[/yellow] {url[:60]}... - {e}")
-            return None
+            return None, url
         except Exception as e:
             console.print(f"[yellow]Error (trafilatura):[/yellow] {url[:60]}... - {e}")
-            return None
+            return None, url
 
-    def _extract_with_newspaper(self, url: str) -> Optional[str]:
+    def _extract_with_newspaper(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """
         Extract content using newspaper3k as fallback.
 
@@ -510,7 +515,7 @@ class ContentExtractor:
             url: URL to extract from
 
         Returns:
-            Extracted content or None if failed
+            Tuple of (extracted content or None if failed, final URL after redirects)
         """
         try:
             # Check if this is a Medium URL
@@ -521,11 +526,13 @@ class ContentExtractor:
 
             html_content = None
             fetch_url = url
+            final_url = url
 
             # Special handling for Medium URLs (same as trafilatura)
             if is_medium:
                 # Resolve canonical URL
                 canonical_url, initial_html = self._resolve_medium_canonical(url, headers)
+                final_url = canonical_url  # Use canonical URL as final URL
 
                 # Classify URL type
                 url_type = self._classify_medium_url(canonical_url)
@@ -553,16 +560,19 @@ class ContentExtractor:
             else:
                 article.download()
                 article.parse()
+                # For non-Medium URLs, try to get final URL from article
+                if not is_medium and hasattr(article, 'url') and article.url:
+                    final_url = article.url
 
             # Validate content
             if article.text and len(article.text.strip()) > 100:
-                return article.text.strip()
+                return article.text.strip(), final_url
 
-            return None
+            return None, final_url
 
         except Exception as e:
             console.print(f"[yellow]Error (newspaper3k):[/yellow] {url[:60]}... - {e}")
-            return None
+            return None, url
 
     def get_metrics(self) -> dict:
         """
