@@ -20,10 +20,15 @@ pyDigestor implements a streamlined pipeline:
   - TF-IDF domain-adaptive ranked retrieval
 - **Pattern-based extraction**: Fast-path for known sites (GitHub, PDFs, arXiv)
 - **Lightweight**: Single-container SQLite architecture (808MB Docker image)
+- **Flexible deployment**: Run natively with Python or in Docker containers
 - **Security-focused**: Optimized for r/netsec and security content
 - **LLM-ready**: Optional Claude integration for triage and extraction (Phase 2)
 
-## Quick Start (Docker)
+## Quick Start
+
+**Two ways to run pyDigestor:**
+
+### Option 1: Docker (Recommended for Production)
 
 ```bash
 # Clone repository
@@ -51,7 +56,29 @@ docker exec pydigestor-app uv run pydigestor ingest
 docker exec pydigestor-app uv run pydigestor search "CVE vulnerability"
 ```
 
-See [docs/quick start.md](docs/quick%20start.md) for detailed setup instructions.
+### Option 2: Native Python (Recommended for Development)
+
+```bash
+# Clone repository
+git clone https://github.com/jschell/pyDigestor.git
+cd pyDigestor
+
+# Run automated setup script
+./setup-native.sh
+
+# Use pyDigestor (no docker exec prefix needed!)
+uv run pydigestor status
+uv run pydigestor ingest
+uv run pydigestor search "CVE vulnerability"
+```
+
+**Requirements**: Python 3.13 + [uv](https://docs.astral.sh/uv/)
+
+---
+
+**See detailed documentation:**
+- [Quick Start (Docker)](docs/quick%20start.md)
+- [Native vs Docker Comparison](docs/native-vs-docker.md)
 
 ## Architecture
 
@@ -92,11 +119,15 @@ See [docs/architecture.md](docs/architecture.md) for detailed design.
 
 ## CLI Usage
 
+**All commands shown with Docker prefix.** For native Python, remove `docker exec pydigestor-app` prefix.
+
+| Docker | Native Python |
+|--------|---------------|
+| `docker exec pydigestor-app uv run pydigestor <cmd>` | `uv run pydigestor <cmd>` |
+
 ### Basic Commands
 
 ```bash
-# All commands run inside Docker container
-
 # Check status and article counts
 docker exec pydigestor-app uv run pydigestor status
 
@@ -108,6 +139,14 @@ docker exec pydigestor-app uv run pydigestor ingest
 
 # Show version
 docker exec pydigestor-app uv run pydigestor version
+```
+
+**Native Python equivalent:**
+```bash
+uv run pydigestor status
+uv run pydigestor config
+uv run pydigestor ingest
+uv run pydigestor version
 ```
 
 ### Search Commands
@@ -132,6 +171,7 @@ docker exec pydigestor-app uv run pydigestor rebuild-fts-index
 
 ### Database Commands
 
+**Docker:**
 ```bash
 # Access SQLite database directly
 docker exec pydigestor-app sqlite3 /app/data/pydigestor.db
@@ -144,6 +184,21 @@ docker exec pydigestor-app sqlite3 /app/data/pydigestor.db "SELECT status, COUNT
 
 # Export database
 docker cp pydigestor-app:/app/data/pydigestor.db ./backup.db
+```
+
+**Native Python:**
+```bash
+# Access SQLite database directly
+sqlite3 data/pydigestor.db
+
+# List all articles
+sqlite3 data/pydigestor.db "SELECT id, title, status FROM articles LIMIT 10;"
+
+# Count articles by status
+sqlite3 data/pydigestor.db "SELECT status, COUNT(*) FROM articles GROUP BY status;"
+
+# Export database
+cp data/pydigestor.db ./backup.db
 ```
 
 ## Search Examples
@@ -241,6 +296,31 @@ Top 20 TF-IDF Terms
 
 ## Development Workflow
 
+### Native Python (Recommended for Development)
+
+**3-4x faster** command execution for rapid iteration:
+
+```bash
+# Run tests (fast iteration)
+uv run pytest tests/ -v
+
+# Run specific test file
+uv run pytest tests/sources/test_extraction.py -v
+
+# Run with coverage
+uv run pytest --cov=src/pydigestor --cov-report=html
+
+# Quick commands (no container overhead)
+uv run pydigestor status
+uv run pydigestor ingest
+uv run pydigestor search "test"
+
+# Access database directly
+sqlite3 data/pydigestor.db
+```
+
+### Docker (Production-like Testing)
+
 ```bash
 # Start services
 cd docker
@@ -255,6 +335,9 @@ docker exec -it pydigestor-app bash
 # Access SQLite database
 docker exec -it pydigestor-app sqlite3 /app/data/pydigestor.db
 
+# Run tests in container
+docker exec pydigestor-app uv run pytest
+
 # Stop services
 docker-compose down
 
@@ -266,6 +349,8 @@ docker-compose down -v
 rm -rf data/pydigestor.db
 docker-compose up -d --build
 ```
+
+**Tip**: Use the same database for both! Docker volume mount maps `./data` to `/app/data`, so you can develop natively and test in Docker seamlessly.
 
 ## Configuration
 
@@ -399,9 +484,10 @@ docker exec pydigestor-app uv run pytest -v -s
 
 ## Documentation
 
-- [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) - Implementation guide
-- [docs/quick start.md](docs/quick%20start.md) - Setup and installation
+- [docs/quick start.md](docs/quick%20start.md) - Docker setup and installation
+- [docs/native-vs-docker.md](docs/native-vs-docker.md) - **Native Python vs Docker comparison**
 - [docs/architecture.md](docs/architecture.md) - Technical design
+- [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) - Implementation guide
 - [docs/local summarization.md](docs/local%20summarization.md) - Summarization guide
 - [docs/feed sources.md](docs/feed%20sources.md) - Recommended feeds
 - [docs/pattern extraction plan.md](docs/pattern%20extraction%20plan.md) - Content extraction patterns
