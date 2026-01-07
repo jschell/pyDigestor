@@ -1,7 +1,7 @@
-"""Migrate to SQLite with FTS5 and sqlite-vec support
+"""Initial SQLite schema with FTS5 and sqlite-vec support
 
 Revision ID: 002
-Revises: 001
+Revises:
 Create Date: 2026-01-07 12:00:00.000000
 
 """
@@ -11,18 +11,13 @@ from sqlalchemy import Text
 
 # revision identifiers, used by Alembic.
 revision = '002'
-down_revision = '001'
+down_revision = None  # This is the initial migration
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
     """Create SQLite schema with FTS5 and vec0 virtual tables."""
-
-    # Drop PostgreSQL tables (clean slate)
-    op.drop_table('signals')
-    op.drop_table('triage_decisions')
-    op.drop_table('articles')
 
     # Create articles table with SQLite-compatible schema
     op.create_table(
