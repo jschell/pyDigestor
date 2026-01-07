@@ -1,9 +1,11 @@
 # SQLite Migration Plan - Option A: Clean Slate
 
-**Branch**: `claude/sqlite-vec-investigation-QiSok-4PnWU`
+> **✅ MIGRATION COMPLETE**: This plan has been successfully implemented. The project now uses SQLite with FTS5 full-text search and TF-IDF ranked retrieval (sqlite-vec was removed in favor of lighter TF-IDF approach). See README.md for current architecture.
+
+**Branch**: `claude/sqlite-vec-investigation-QiSok-4PnWU` (merged to main)
 **Date**: 2026-01-07
-**Status**: Planning Phase
-**Approach**: Clean migration from PostgreSQL to SQLite + FTS5 + sqlite-vec
+**Status**: ✅ Complete (FTS5 implemented, PyTorch removed, TF-IDF added)
+**Approach**: Clean migration from PostgreSQL to SQLite + FTS5
 
 ---
 

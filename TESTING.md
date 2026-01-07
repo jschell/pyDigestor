@@ -1,5 +1,7 @@
 # Testing Instructions for Phase 1, Day 1-2
 
+> **⚠️ HISTORICAL DOCUMENT**: This document describes the original PostgreSQL-based setup from early development (January 2026). The project has since migrated to SQLite with FTS5 search. For current testing instructions, see README.md and docs/quick start.md.
+
 ## What Was Completed
 
 ✅ All Phase 1, Day 1-2 tasks completed:
