@@ -1,14 +1,18 @@
 # pyDigestor - Project Summary
 
+> **ℹ️ NOTE**: This is an early project summary from planning phase. The project has evolved to use SQLite with FTS5 search instead of PostgreSQL. See [../README.md](../README.md) for current status.
+
 ## Goal
 
 Build a feed aggregation and analysis pipeline that ingests RSS/Atom/Reddit feeds, extracts security insights, and stores them in a queryable database.
 
 ## Core Functionality
 
-**Input:** RSS/Atom feeds + Reddit subreddits  
-**Processing:** Local summarization + LLM-based triage and signal extraction  
-**Output:** PostgreSQL database of articles, signals, and summaries
+**Input:** RSS/Atom feeds + Reddit subreddits
+**Processing:** Local summarization + search (FTS5/TF-IDF)
+**Output:** SQLite database with FTS5 search of articles and summaries
+
+**Phase 2 (Optional):** LLM-based triage and signal extraction
 
 ## Pipeline Steps
 
@@ -67,7 +71,8 @@ Build a feed aggregation and analysis pipeline that ingests RSS/Atom/Reddit feed
 |-------|-----------|---------|
 | **Language** | Python 3.13 | Core |
 | **Package Manager** | uv | Fast dependency management |
-| **Database** | PostgreSQL | State storage |
+| **Database** | SQLite3 + FTS5 | State storage + full-text search |
+| **Search** | scikit-learn | TF-IDF ranked retrieval |
 | **ORM** | SQLModel | Database models |
 | **LLM Provider** | LiteLLM | Multi-provider abstraction |
 | **LLM Models** | Claude Haiku/Sonnet | Triage/extraction |
@@ -79,13 +84,19 @@ Build a feed aggregation and analysis pipeline that ingests RSS/Atom/Reddit feed
 
 ## Cost Structure
 
-**Monthly costs:**
+**Phase 1 (Current): $0/month**
+- All processing is local (no API calls)
+- SQLite database (embedded, no hosting costs)
+- Summarization via sumy (local)
+- Search via FTS5 + TF-IDF (local)
+
+**Phase 2 (Optional LLM): ~$0.42/month**
 - Triage (15 articles/day × 30 days × $0.0001): ~$0.05
 - Extract (12 articles/day × 30 days × $0.001): ~$0.37
 - **Total: ~$0.42/month**
 
 **Infrastructure:**
-- Database: $0 (local) or $15/month (managed)
+- Database: $0 (SQLite file-based, no hosting)
 
 **Savings vs original plan:**
 - No publishing infrastructure: -$35/month (Ghost)
