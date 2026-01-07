@@ -16,6 +16,7 @@ from pydigestor.steps.ingest import IngestStep
 from pydigestor.steps.summarize import SummarizationStep
 from pydigestor.search.fts import FTS5Search
 from pydigestor.search.vector import VectorSearch
+from pydigestor.search.hybrid import HybridSearch
 
 app = typer.Typer(
     name="pydigestor",
@@ -321,6 +322,71 @@ def similar(
     except ValueError as e:
         console.print(f"\n[red]Error:[/red] {e}\n")
         raise typer.Exit(code=1)
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def hybrid(
+    query: str = typer.Argument(..., help="Search query (keyword + semantic)"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of results"),
+    fts_weight: float = typer.Option(0.5, "--fts-weight", help="Weight for FTS5 scores (0-1)"),
+    vector_weight: float = typer.Option(0.5, "--vector-weight", help="Weight for vector scores (0-1)"),
+):
+    """Hybrid search combining keyword (FTS5) and semantic (vector) search with RRF."""
+    try:
+        session = next(get_session())
+        searcher = HybridSearch()
+
+        # Get results
+        results = searcher.search(
+            session,
+            query,
+            limit=limit,
+            fts_weight=fts_weight,
+            vector_weight=vector_weight
+        )
+
+        if not results:
+            console.print(f"\n[yellow]No results found for:[/yellow] {query}\n")
+            return
+
+        # Display results
+        console.print(f"\n[bold cyan]Hybrid Search Results[/bold cyan] ({len(results)} results)")
+        console.print(f"[dim]Query:[/dim] {query}")
+        console.print(f"[dim]Weights:[/dim] FTS={fts_weight:.1f}, Vector={vector_weight:.1f}\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title", style="cyan", width=40)
+        table.add_column("Snippet", style="white", width=45)
+        table.add_column("RRF Score", justify="right", style="green", width=10)
+        table.add_column("FTS", justify="right", style="blue", width=8)
+        table.add_column("Vec", justify="right", style="yellow", width=8)
+
+        for idx, result in enumerate(results, 1):
+            # Truncate title and snippet if too long
+            title = result.title[:37] + "..." if len(result.title) > 40 else result.title
+            snippet = " ".join(result.snippet.split())  # Clean whitespace
+            snippet = snippet[:42] + "..." if len(snippet) > 45 else snippet
+
+            # Format FTS and vector scores
+            fts_str = f"{result.fts_rank:.2f}" if result.fts_rank is not None else "-"
+            vec_str = f"{result.vector_distance:.3f}" if result.vector_distance is not None else "-"
+
+            table.add_row(
+                str(idx),
+                title,
+                snippet,
+                f"{result.rrf_score:.4f}",
+                fts_str,
+                vec_str
+            )
+
+        console.print(table)
+        console.print()
+
     except Exception as e:
         console.print(f"\n[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
