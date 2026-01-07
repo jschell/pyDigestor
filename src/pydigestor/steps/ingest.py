@@ -8,12 +8,15 @@ from rich.console import Console
 from rich.table import Table
 from sqlmodel import Session, select
 
+from sqlalchemy import text
+
 from pydigestor.config import Settings
 from pydigestor.database import get_session
 from pydigestor.models import Article
 from pydigestor.sources.extraction import ContentExtractor
 from pydigestor.sources.feeds import FeedEntry, RSSFeedSource
 from pydigestor.sources.reddit import QualityFilter, RedditFetcher
+from pydigestor.search.embeddings import EmbeddingGenerator
 
 console = Console()
 
@@ -29,6 +32,7 @@ class IngestStep:
             settings: Application settings (defaults to Settings())
         """
         self.settings = settings or Settings()
+        self.embedder = EmbeddingGenerator()  # Initialize embedding generator
 
     def run(self, session: Optional[Session] = None, force_extraction: bool = False) -> dict:
         """
@@ -187,6 +191,29 @@ class IngestStep:
         session.add(article)
         session.commit()
         session.refresh(article)  # Get the generated ID
+
+        # Generate and store embedding if article has title and summary
+        if article.title and article.summary:
+            try:
+                embedding = self.embedder.generate_for_article(article)
+
+                # Insert into vec0 table
+                sql = text(
+                    """
+                    INSERT INTO article_embeddings (article_id, embedding)
+                    VALUES (:article_id, :embedding)
+                """
+                )
+                session.execute(
+                    sql, {"article_id": article.id, "embedding": embedding}
+                )
+                session.commit()
+            except Exception as e:
+                # Log warning but don't fail the ingestion
+                console.print(
+                    f"[yellow]⚠[/yellow] Failed to generate embedding for {article.id}: {e}"
+                )
+
         console.print(f"[green]✓[/green] Stored: {entry.title[:60]}...")
 
         return article.id
@@ -234,10 +261,41 @@ class IngestStep:
         # Commit all summaries
         session.commit()
 
+        # Generate embeddings for newly summarized articles
         if summarized_count > 0:
             console.print(
                 f"[green]✓[/green] Auto-summarized {summarized_count} article(s)"
             )
+            console.print(f"[blue]Generating embeddings...[/blue]")
+
+            embedding_count = 0
+            for article in articles:
+                if article.summary:
+                    try:
+                        embedding = self.embedder.generate_for_article(article)
+
+                        # Insert into vec0 table (or replace if exists)
+                        sql = text(
+                            """
+                            INSERT OR REPLACE INTO article_embeddings (article_id, embedding)
+                            VALUES (:article_id, :embedding)
+                        """
+                        )
+                        session.execute(
+                            sql, {"article_id": article.id, "embedding": embedding}
+                        )
+                        embedding_count += 1
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]⚠[/yellow] Failed to generate embedding for {article.id}: {e}"
+                        )
+
+            session.commit()
+
+            if embedding_count > 0:
+                console.print(
+                    f"[green]✓[/green] Generated {embedding_count} embedding(s)"
+                )
 
     def _display_results(self, stats: dict) -> None:
         """Display ingest results in a table."""

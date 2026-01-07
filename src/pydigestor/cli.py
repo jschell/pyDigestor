@@ -15,6 +15,7 @@ from pydigestor.models import Article, Signal, TriageDecision
 from pydigestor.steps.ingest import IngestStep
 from pydigestor.steps.summarize import SummarizationStep
 from pydigestor.search.fts import FTS5Search
+from pydigestor.search.vector import VectorSearch
 
 app = typer.Typer(
     name="pydigestor",
@@ -217,6 +218,109 @@ def search(
         console.print(table)
         console.print()
 
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def semantic_search(
+    query: str = typer.Argument(..., help="Search query for semantic similarity"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of results"),
+):
+    """Search articles using semantic similarity (vector embeddings)."""
+    try:
+        session = next(get_session())
+        searcher = VectorSearch()
+
+        # Get results
+        results = searcher.search_by_text(session, query, limit=limit)
+
+        if not results:
+            console.print(f"\n[yellow]No results found for:[/yellow] {query}\n")
+            return
+
+        # Display results
+        console.print(f"\n[bold cyan]Semantic Search Results[/bold cyan] ({len(results)} results)")
+        console.print(f"[dim]Query:[/dim] {query}\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title", style="cyan", width=50)
+        table.add_column("Summary", style="white", width=60)
+        table.add_column("Distance", justify="right", style="green", width=10)
+
+        for idx, result in enumerate(results, 1):
+            # Truncate title and summary if too long
+            title = result.title[:47] + "..." if len(result.title) > 50 else result.title
+            summary = result.summary[:57] + "..." if len(result.summary) > 60 else result.summary
+
+            table.add_row(
+                str(idx),
+                title,
+                summary,
+                f"{result.distance:.4f}"
+            )
+
+        console.print(table)
+        console.print()
+
+    except Exception as e:
+        console.print(f"\n[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def similar(
+    article_id: str = typer.Argument(..., help="Article ID to find similar articles for"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of results"),
+):
+    """Find similar articles using vector similarity."""
+    try:
+        session = next(get_session())
+        searcher = VectorSearch()
+
+        # Get source article
+        source_article = session.get(Article, article_id)
+        if not source_article:
+            console.print(f"\n[red]Error:[/red] Article {article_id} not found\n")
+            raise typer.Exit(code=1)
+
+        # Get similar articles
+        results = searcher.find_similar(session, article_id, limit=limit)
+
+        if not results:
+            console.print(f"\n[yellow]No similar articles found[/yellow]\n")
+            return
+
+        # Display results
+        console.print(f"\n[bold cyan]Similar Articles[/bold cyan] ({len(results)} results)")
+        console.print(f"[dim]Source:[/dim] {source_article.title}\n")
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title", style="cyan", width=50)
+        table.add_column("Summary", style="white", width=60)
+        table.add_column("Distance", justify="right", style="green", width=10)
+
+        for idx, result in enumerate(results, 1):
+            # Truncate title and summary if too long
+            title = result.title[:47] + "..." if len(result.title) > 50 else result.title
+            summary = result.summary[:57] + "..." if len(result.summary) > 60 else result.summary
+
+            table.add_row(
+                str(idx),
+                title,
+                summary,
+                f"{result.distance:.4f}"
+            )
+
+        console.print(table)
+        console.print()
+
+    except ValueError as e:
+        console.print(f"\n[red]Error:[/red] {e}\n")
+        raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"\n[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
