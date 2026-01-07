@@ -1,6 +1,16 @@
-"""Configuration management for pyDigestor."""
+"""Configuration management for pyDigestor.
+
+Supports loading configuration from:
+1. config.toml - Non-secret settings (feeds, options, etc.)
+2. .env - Secrets only (DATABASE_URL, API keys)
+3. Environment variables - Override both (highest priority)
+
+Priority: Environment variables > .env > config.toml > defaults
+"""
 
 import json
+import tomllib
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field, field_validator
@@ -8,7 +18,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """
+    Application settings loaded from config.toml (non-secrets) and .env (secrets).
+
+    Configuration loading order (higher priority overrides lower):
+    1. Default values (defined in Field defaults)
+    2. config.toml (non-secret configuration)
+    3. .env file (secrets and overrides)
+    4. Environment variables (highest priority)
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -138,6 +156,131 @@ class Settings(BaseSettings):
             except json.JSONDecodeError:
                 return [v]
         return v
+
+    def __init__(self, **kwargs):
+        """
+        Initialize settings, loading from config.toml if present.
+
+        Loading order (later values override earlier):
+        1. Default Field values
+        2. config.toml (if exists)
+        3. .env file (via Pydantic)
+        4. Environment variables (via Pydantic)
+        5. **kwargs passed to __init__
+        """
+        # Load from config.toml first (if exists)
+        config_path = Path("config.toml")
+        toml_data = {}
+
+        if config_path.exists():
+            try:
+                with open(config_path, "rb") as f:
+                    toml_config = tomllib.load(f)
+
+                # Flatten TOML structure for Pydantic
+                toml_data = self._flatten_toml(toml_config)
+            except Exception as e:
+                # If TOML parsing fails, log warning but continue
+                # (allows fallback to .env and environment variables)
+                import sys
+                print(f"Warning: Failed to load config.toml: {e}", file=sys.stderr)
+
+        # Merge TOML data with kwargs (kwargs take precedence)
+        # Pydantic will then override with .env and environment variables
+        merged_data = {**toml_data, **kwargs}
+
+        super().__init__(**merged_data)
+
+    @staticmethod
+    def _flatten_toml(config: dict) -> dict:
+        """
+        Flatten TOML config structure to match Pydantic field names.
+
+        Example:
+            [feeds]
+            rss_feeds = [...]
+
+            Becomes: {"rss_feeds": [...]}
+        """
+        flat = {}
+
+        # Feeds section
+        if "feeds" in config:
+            feeds = config["feeds"]
+            if "rss_feeds" in feeds:
+                flat["rss_feeds"] = feeds["rss_feeds"]
+            if "reddit_subreddits" in feeds:
+                flat["reddit_subreddits"] = feeds["reddit_subreddits"]
+
+        # Reddit section
+        if "reddit" in config:
+            reddit = config["reddit"]
+            if "sort" in reddit:
+                flat["reddit_sort"] = reddit["sort"]
+            if "limit" in reddit:
+                flat["reddit_limit"] = reddit["limit"]
+            if "max_age_hours" in reddit:
+                flat["reddit_max_age_hours"] = reddit["max_age_hours"]
+            if "min_score" in reddit:
+                flat["reddit_min_score"] = reddit["min_score"]
+            if "priority_hours" in reddit:
+                flat["reddit_priority_hours"] = reddit["priority_hours"]
+            if "min_comments" in reddit:
+                flat["reddit_min_comments"] = reddit["min_comments"]
+            if "blocked_domains" in reddit:
+                flat["reddit_blocked_domains"] = reddit["blocked_domains"]
+
+        # Summarization section
+        if "summarization" in config:
+            summ = config["summarization"]
+            if "auto_summarize" in summ:
+                flat["auto_summarize"] = summ["auto_summarize"]
+            if "method" in summ:
+                flat["summarization_method"] = summ["method"]
+            if "min_content_length" in summ:
+                flat["summary_min_content_length"] = summ["min_content_length"]
+            if "min_sentences" in summ:
+                flat["summary_min_sentences"] = summ["min_sentences"]
+            if "max_sentences" in summ:
+                flat["summary_max_sentences"] = summ["max_sentences"]
+            if "compression_ratio" in summ:
+                flat["summary_compression_ratio"] = summ["compression_ratio"]
+
+        # Extraction section
+        if "extraction" in config:
+            ext = config["extraction"]
+            if "enable_pattern_extraction" in ext:
+                flat["enable_pattern_extraction"] = ext["enable_pattern_extraction"]
+            if "fetch_timeout" in ext:
+                flat["content_fetch_timeout"] = ext["fetch_timeout"]
+            if "max_retries" in ext:
+                flat["content_max_retries"] = ext["max_retries"]
+
+        # Features section
+        if "features" in config:
+            feat = config["features"]
+            if "enable_triage" in feat:
+                flat["enable_triage"] = feat["enable_triage"]
+            if "enable_extraction" in feat:
+                flat["enable_extraction"] = feat["enable_extraction"]
+
+        # LLM section
+        if "llm" in config:
+            llm = config["llm"]
+            if "triage_model" in llm:
+                flat["triage_model"] = llm["triage_model"]
+            if "extract_model" in llm:
+                flat["extract_model"] = llm["extract_model"]
+
+        # Application section
+        if "application" in config:
+            app = config["application"]
+            if "log_level" in app:
+                flat["log_level"] = app["log_level"]
+            if "enable_debug" in app:
+                flat["enable_debug"] = app["enable_debug"]
+
+        return flat
 
 
 # Global settings instance
