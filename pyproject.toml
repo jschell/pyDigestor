@@ -29,6 +29,8 @@ dependencies = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "sqlite-vec>=0.1.0",
+    # Use CPU-only PyTorch to avoid CUDA/nvidia packages (~2GB savings)
+    "torch>=2.0.0",
     "sentence-transformers>=2.2.0",
 ]
 
@@ -90,3 +92,14 @@ select = [
 ignore = [
     "E501", # line too long (handled by black)
 ]
+
+# Configure uv to use PyTorch CPU-only wheels (avoids CUDA/nvidia packages)
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "platform_system == 'Linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
