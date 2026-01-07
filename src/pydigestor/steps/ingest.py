@@ -1,5 +1,6 @@
 """Ingest step: Fetch feeds and store articles in database."""
 
+import json
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -197,7 +198,7 @@ class IngestStep:
             try:
                 embedding = self.embedder.generate_for_article(article)
 
-                # Insert into vec0 table
+                # Insert into vec0 table (serialize embedding to JSON)
                 sql = text(
                     """
                     INSERT INTO article_embeddings (article_id, embedding)
@@ -205,7 +206,7 @@ class IngestStep:
                 """
                 )
                 session.execute(
-                    sql, {"article_id": article.id, "embedding": embedding}
+                    sql, {"article_id": article.id, "embedding": json.dumps(embedding)}
                 )
                 session.commit()
             except Exception as e:
@@ -274,7 +275,7 @@ class IngestStep:
                     try:
                         embedding = self.embedder.generate_for_article(article)
 
-                        # Insert into vec0 table (or replace if exists)
+                        # Insert into vec0 table (or replace if exists, serialize to JSON)
                         sql = text(
                             """
                             INSERT OR REPLACE INTO article_embeddings (article_id, embedding)
@@ -282,7 +283,7 @@ class IngestStep:
                         """
                         )
                         session.execute(
-                            sql, {"article_id": article.id, "embedding": embedding}
+                            sql, {"article_id": article.id, "embedding": json.dumps(embedding)}
                         )
                         embedding_count += 1
                     except Exception as e:

@@ -1,5 +1,6 @@
 """Vector similarity search using sqlite-vec."""
 
+import json
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -115,7 +116,7 @@ class VectorSearch:
         # Generate embedding for query
         query_embedding = self.embedder.generate(query)
 
-        # Find similar articles
+        # Find similar articles (serialize embedding to JSON)
         sql = text(
             """
             SELECT
@@ -131,7 +132,7 @@ class VectorSearch:
         )
 
         results = session.execute(
-            sql, {"query_embedding": query_embedding, "limit": limit}
+            sql, {"query_embedding": json.dumps(query_embedding), "limit": limit}
         ).fetchall()
 
         return [
