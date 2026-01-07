@@ -14,7 +14,7 @@ from pydigestor.database import get_session
 from pydigestor.models import Article, Signal, TriageDecision
 from pydigestor.steps.ingest import IngestStep
 from pydigestor.steps.summarize import SummarizationStep
-from pydigestor.search.fts import FTS5Search
+from pydigestor.search.fts import FTS5Search, FTS5SearchError
 from pydigestor.search.tfidf import TfidfSearch
 
 app = typer.Typer(
@@ -218,6 +218,9 @@ def search(
         console.print(table)
         console.print()
 
+    except FTS5SearchError as e:
+        console.print(f"\n[bold yellow]Invalid Query Syntax:[/bold yellow]\n{e}\n")
+        raise typer.Exit(code=1)
     except Exception as e:
         console.print(f"\n[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
