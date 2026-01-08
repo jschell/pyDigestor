@@ -707,21 +707,45 @@ class ContentExtractor:
                     html_content = response.text
                     final_url = str(response.url)
 
-            # For non-Medium URLs, always pre-fetch HTML with SSL fallback
+            # For non-Medium URLs, pre-fetch HTML with SSL fallback
             # This ensures newspaper3k benefits from our SSL error handling
             if not html_content:
-                response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
-                response.raise_for_status()
-                html_content = response.text
-                final_url = str(response.url)
+                try:
+                    response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                    response.raise_for_status()
+                    html_content = response.text
+                    final_url = str(response.url)
+                except Exception:
+                    # If pre-fetch fails, let newspaper3k try its own download
+                    html_content = None
 
-            # Create article and parse pre-fetched HTML
+            # Create article
             article = NewspaperArticle(fetch_url)
             article.config.browser_user_agent = headers["User-Agent"]
             article.config.request_timeout = self.timeout
 
-            article.set_html(html_content)
-            article.parse()
+            # Try using pre-fetched HTML first
+            if html_content:
+                try:
+                    article.set_html(html_content)
+                    article.parse()
+                except Exception as e:
+                    # If set_html fails (e.g., XML parsing issues with control characters),
+                    # fall back to letting newspaper3k download and sanitize the HTML itself
+                    if "XML compatible" in str(e) or "NULL byte" in str(e):
+                        console.print(f"[dim]→ HTML has encoding issues, letting newspaper3k download directly[/dim]")
+                        article.download()
+                        article.parse()
+                        if not is_medium and hasattr(article, 'url') and article.url:
+                            final_url = article.url
+                    else:
+                        raise
+            else:
+                # No pre-fetched HTML, let newspaper3k download it
+                article.download()
+                article.parse()
+                if not is_medium and hasattr(article, 'url') and article.url:
+                    final_url = article.url
 
             # Validate content
             if article.text and len(article.text.strip()) > 100:
