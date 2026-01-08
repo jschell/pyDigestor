@@ -202,7 +202,7 @@ class IngestStep:
         """
         from pydigestor.steps.summarize import SummarizationStep
 
-        console.print(f"\n[blue]Auto-summarizing {len(article_ids)} new article(s)...[/blue]")
+        console.print(f"\n[blue]Checking {len(article_ids)} new article(s) for summarization...[/blue]")
 
         # Get articles with content that need summarization
         articles = session.exec(
@@ -213,16 +213,18 @@ class IngestStep:
         ).all()
 
         if not articles:
-            console.print("[dim]No articles need summarization.[/dim]")
+            console.print("[dim]No articles have content to summarize.[/dim]")
             return
 
         # Create summarizer and generate summaries
         summarizer = SummarizationStep()
         summarized_count = 0
+        skipped_too_short = 0
 
         for article in articles:
             # Skip if content is too short
             if len(article.content.strip()) < self.settings.summary_min_content_length:
+                skipped_too_short += 1
                 continue
 
             # Generate summary
@@ -238,6 +240,14 @@ class IngestStep:
         if summarized_count > 0:
             console.print(
                 f"[green]✓[/green] Auto-summarized {summarized_count} article(s)"
+            )
+
+        # Show breakdown if some were skipped
+        if skipped_too_short > 0 or len(articles) != len(article_ids):
+            skipped_no_content = len(article_ids) - len(articles)
+            console.print(
+                f"[dim]  Skipped: {skipped_no_content} without content, "
+                f"{skipped_too_short} too short (< {self.settings.summary_min_content_length} chars)[/dim]"
             )
 
     def _display_results(self, stats: dict) -> None:
