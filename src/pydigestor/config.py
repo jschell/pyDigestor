@@ -201,6 +201,9 @@ class Settings(BaseSettings):
             except Exception as e:
                 print(f"Warning: Failed to copy config.example.toml to config.toml: {e}", file=sys.stderr)
 
+        # Warn if .env contains non-secret configuration
+        self._check_env_for_non_secrets(env_path, sys)
+
         # Load from config.toml (now guaranteed to exist if template was available)
         toml_data = {}
 
@@ -221,6 +224,62 @@ class Settings(BaseSettings):
         merged_data = {**toml_data, **kwargs}
 
         super().__init__(**merged_data)
+
+    @staticmethod
+    def _check_env_for_non_secrets(env_path: Path, sys) -> None:
+        """
+        Check if .env contains non-secret configuration and warn user.
+
+        This helps users migrate from the old .env-only config to the new
+        config.toml approach for non-secret settings.
+        """
+        if not env_path.exists():
+            return
+
+        # Non-secret keys that should be in config.toml instead
+        non_secret_keys = {
+            "RSS_FEEDS", "REDDIT_SUBREDDITS", "REDDIT_SORT", "REDDIT_LIMIT",
+            "REDDIT_MAX_AGE_HOURS", "REDDIT_MIN_SCORE", "REDDIT_PRIORITY_HOURS",
+            "REDDIT_MIN_COMMENTS", "REDDIT_BLOCKED_DOMAINS",
+            "AUTO_SUMMARIZE", "SUMMARIZATION_METHOD", "SUMMARY_MIN_CONTENT_LENGTH",
+            "SUMMARY_MIN_SENTENCES", "SUMMARY_MAX_SENTENCES", "SUMMARY_COMPRESSION_RATIO",
+            "CONTENT_FETCH_TIMEOUT", "CONTENT_MAX_RETRIES", "ENABLE_PATTERN_EXTRACTION",
+            "LOG_LEVEL", "ENABLE_DEBUG", "ENABLE_TRIAGE", "ENABLE_EXTRACTION",
+            "TRIAGE_MODEL", "EXTRACT_MODEL",
+        }
+
+        try:
+            with open(env_path) as f:
+                env_lines = f.readlines()
+
+            found_non_secrets = []
+            for line in env_lines:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith("#"):
+                    continue
+
+                # Extract key from KEY=value
+                if "=" in line:
+                    key = line.split("=")[0].strip()
+                    if key in non_secret_keys:
+                        found_non_secrets.append(key)
+
+            if found_non_secrets:
+                print(
+                    f"\n⚠️  Warning: Your .env file contains non-secret configuration:\n"
+                    f"   {', '.join(found_non_secrets[:3])}"
+                    f"{' and ' + str(len(found_non_secrets) - 3) + ' more' if len(found_non_secrets) > 3 else ''}\n"
+                    f"\n"
+                    f"   These settings should be moved to config.toml for better organization.\n"
+                    f"   For now, .env values will override config.toml (backward compatible).\n"
+                    f"\n"
+                    f"   Migration guide: docs/configuration-separation.md\n",
+                    file=sys.stderr,
+                )
+        except Exception:
+            # Silently fail - don't break config loading if we can't read .env
+            pass
 
     @staticmethod
     def _flatten_toml(config: dict) -> dict:
