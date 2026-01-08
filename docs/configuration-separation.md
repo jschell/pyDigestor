@@ -4,6 +4,38 @@
 
 This guide explains how to separate secret configuration (API keys, credentials) from non-secret configuration (feed lists, application settings) in pyDigestor.
 
+## Configuration Priority
+
+pyDigestor loads configuration in this order (higher priority overrides lower):
+
+```
+Environment variables > config.toml > .env > defaults
+     (highest)                           (lowest)
+```
+
+**What this means:**
+- **config.toml** is the source of truth for configuration (feeds, settings)
+- **.env** is for secrets only (DATABASE_URL, API keys)
+- **Environment variables** override everything (useful for testing/deployment)
+
+**Example:**
+```bash
+# config.toml
+[reddit]
+max_age_hours = 48
+
+# .env (old-style with config - not recommended!)
+REDDIT_MAX_AGE_HOURS=24
+
+# Result: max_age_hours = 48 (config.toml wins)
+```
+
+**To override at runtime:**
+```bash
+REDDIT_MAX_AGE_HOURS=72 uv run pydigestor ingest
+# Result: max_age_hours = 72 (env var wins)
+```
+
 ## Why Separate Configuration?
 
 ### Current Problem

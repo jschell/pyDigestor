@@ -5,7 +5,10 @@ Supports loading configuration from:
 2. .env - Secrets only (DATABASE_URL, API keys)
 3. Environment variables - Override both (highest priority)
 
-Priority: Environment variables > .env > config.toml > defaults
+Priority: Environment variables > config.toml > .env > defaults
+
+Note: config.toml takes precedence over .env for non-secret settings.
+This encourages proper separation: secrets in .env, configuration in config.toml.
 """
 
 import json
@@ -23,9 +26,12 @@ class Settings(BaseSettings):
 
     Configuration loading order (higher priority overrides lower):
     1. Default values (defined in Field defaults)
-    2. config.toml (non-secret configuration)
-    3. .env file (secrets and overrides)
-    4. Environment variables (highest priority)
+    2. .env file (secrets: DATABASE_URL, ANTHROPIC_API_KEY)
+    3. config.toml (non-secret configuration: feeds, settings)
+    4. Environment variables (highest priority - overrides everything)
+
+    Note: config.toml takes precedence over .env for configuration settings.
+    This ensures proper separation: secrets in .env, configuration in config.toml.
     """
 
     model_config = SettingsConfigDict(
@@ -159,14 +165,16 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         """
-        Initialize settings, loading from config.toml if present.
+        Initialize settings, loading from config.toml and .env.
 
         Loading order (later values override earlier):
         1. Default Field values
-        2. config.toml (if exists)
-        3. .env file (via Pydantic)
-        4. Environment variables (via Pydantic)
+        2. .env file (via Pydantic) - secrets only
+        3. config.toml (if exists) - non-secret configuration
+        4. Environment variables (via Pydantic) - highest priority
         5. **kwargs passed to __init__
+
+        Note: config.toml overrides .env for configuration settings.
         """
         import sys
         import shutil
@@ -271,8 +279,8 @@ class Settings(BaseSettings):
                     f"   {', '.join(found_non_secrets[:3])}"
                     f"{' and ' + str(len(found_non_secrets) - 3) + ' more' if len(found_non_secrets) > 3 else ''}\n"
                     f"\n"
-                    f"   These settings should be moved to config.toml for better organization.\n"
-                    f"   For now, .env values will override config.toml (backward compatible).\n"
+                    f"   These settings should be in config.toml instead.\n"
+                    f"   Note: config.toml values will take precedence over .env for these settings.\n"
                     f"\n"
                     f"   Migration guide: docs/configuration-separation.md\n",
                     file=sys.stderr,
