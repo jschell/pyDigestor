@@ -665,6 +665,35 @@ class ContentExtractor:
             console.print(f"[yellow]Error (trafilatura):[/yellow] {url[:60]}... - {e}")
             return None, url
 
+    def _sanitize_html(self, html: str) -> str:
+        """
+        Sanitize HTML by removing NULL bytes and control characters.
+
+        newspaper3k's set_html() is strict about XML compatibility and rejects
+        HTML containing NULL bytes or control characters. This method removes
+        those problematic characters while preserving the content.
+
+        Args:
+            html: Raw HTML string
+
+        Returns:
+            Sanitized HTML string safe for newspaper3k
+        """
+        # Remove NULL bytes
+        html = html.replace('\x00', '')
+
+        # Remove other control characters (except newlines, tabs, carriage returns)
+        # Control characters are in the range 0x00-0x1F and 0x7F-0x9F
+        # Keep: \n (0x0A), \r (0x0D), \t (0x09)
+        cleaned = []
+        for char in html:
+            code = ord(char)
+            # Keep printable chars, newlines, tabs, carriage returns
+            if code >= 0x20 or char in '\n\r\t':
+                cleaned.append(char)
+
+        return ''.join(cleaned)
+
     def _extract_with_newspaper(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """
         Extract content using newspaper3k as fallback.
@@ -726,7 +755,10 @@ class ContentExtractor:
 
             # Try using pre-fetched HTML first
             if html_content:
-                article.set_html(html_content)
+                # Sanitize HTML to remove NULL bytes and control characters
+                # that newspaper3k's XML parser rejects
+                sanitized_html = self._sanitize_html(html_content)
+                article.set_html(sanitized_html)
                 article.parse()
             else:
                 # No pre-fetched HTML (pre-fetch failed), let newspaper3k download it
