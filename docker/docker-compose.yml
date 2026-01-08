@@ -13,6 +13,6 @@ services:
       - ../tests:/app/tests
       - ../alembic:/app/alembic
       - ../data:/app/data
-      # Note: .env and config.toml are created inside container from templates
-      # They can be edited via: docker exec pydigestor-app nano /app/config.toml
+      # Mount host config files (allows editing from host)
+      - ../config.toml:/app/config.toml:ro
     command: tail -f /dev/null
