@@ -657,6 +657,12 @@ class ContentExtractor:
             if content and len(content.strip()) > 100:
                 return content.strip(), final_url
 
+            # Debug: show why extraction failed
+            if content:
+                console.print(f"[dim]→ trafilatura extracted {len(content.strip())} chars (< 100, rejected)[/dim]")
+            else:
+                console.print(f"[dim]→ trafilatura returned no content[/dim]")
+
             return None, final_url
 
         except httpx.TimeoutException:
@@ -775,6 +781,12 @@ class ContentExtractor:
             # Validate content
             if article.text and len(article.text.strip()) > 100:
                 return article.text.strip(), final_url
+
+            # Debug: show why extraction failed
+            if article.text:
+                console.print(f"[dim]→ newspaper3k extracted {len(article.text.strip())} chars (< 100, rejected)[/dim]")
+            else:
+                console.print(f"[dim]→ newspaper3k returned no content[/dim]")
 
             return None, final_url
 
