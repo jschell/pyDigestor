@@ -686,7 +686,7 @@ class ContentExtractor:
             fetch_url = url
             final_url = url
 
-            # Special handling for Medium URLs (same as trafilatura)
+            # Special handling for Medium URLs
             if is_medium:
                 # Resolve canonical URL
                 canonical_url, initial_html = self._resolve_medium_canonical(url, headers)
@@ -705,22 +705,23 @@ class ContentExtractor:
                     response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                     response.raise_for_status()
                     html_content = response.text
+                    final_url = str(response.url)
 
-            # Create article
+            # For non-Medium URLs, always pre-fetch HTML with SSL fallback
+            # This ensures newspaper3k benefits from our SSL error handling
+            if not html_content:
+                response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response.raise_for_status()
+                html_content = response.text
+                final_url = str(response.url)
+
+            # Create article and parse pre-fetched HTML
             article = NewspaperArticle(fetch_url)
             article.config.browser_user_agent = headers["User-Agent"]
             article.config.request_timeout = self.timeout
 
-            # Use pre-fetched HTML or download
-            if html_content:
-                article.set_html(html_content)
-                article.parse()
-            else:
-                article.download()
-                article.parse()
-                # For non-Medium URLs, try to get final URL from article
-                if not is_medium and hasattr(article, 'url') and article.url:
-                    final_url = article.url
+            article.set_html(html_content)
+            article.parse()
 
             # Validate content
             if article.text and len(article.text.strip()) > 100:
