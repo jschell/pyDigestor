@@ -61,6 +61,40 @@ class ContentExtractor:
             "cached_failures": 0,
         }
 
+    def _http_get_with_ssl_fallback(self, url: str, **kwargs) -> httpx.Response:
+        """
+        Make HTTP GET request with SSL verification fallback.
+
+        First attempts with SSL verification enabled (secure).
+        If that fails with SSL error, retries with verification disabled.
+
+        Args:
+            url: URL to fetch
+            **kwargs: Additional arguments to pass to httpx.get
+
+        Returns:
+            httpx.Response object
+
+        Raises:
+            httpx.HTTPError: If request fails for reasons other than SSL
+        """
+        try:
+            # First attempt: normal request with SSL verification
+            return httpx.get(url, **kwargs)
+        except httpx.ConnectError as e:
+            # Check if it's an SSL error
+            if "SSL" in str(e) or "CERTIFICATE" in str(e):
+                console.print(f"[yellow]⚠[/yellow] SSL verification failed for {url[:50]}..., retrying without SSL verification")
+                # Retry without SSL verification
+                try:
+                    return httpx.get(url, verify=False, **kwargs)
+                except Exception as retry_error:
+                    console.print(f"[yellow]⚠[/yellow] Retry without SSL verification also failed: {retry_error}")
+                    raise
+            else:
+                # Not an SSL error, re-raise
+                raise
+
     def extract(self, url: str) -> tuple[Optional[str], str]:
         """
         Extract content from a URL.
@@ -182,7 +216,7 @@ class ContentExtractor:
             console.print(f"[blue]Downloading PDF:[/blue] {url[:60]}...")
 
             # Download PDF
-            response = httpx.get(
+            response = self._http_get_with_ssl_fallback(
                 url,
                 timeout=30,  # PDFs can be large
                 follow_redirects=True,
@@ -315,7 +349,7 @@ class ContentExtractor:
         """
         try:
             # Fetch with redirects to resolve /p/ URLs
-            response = httpx.get(url, headers=headers, follow_redirects=True, timeout=self.timeout)
+            response = self._http_get_with_ssl_fallback(url, headers=headers, follow_redirects=True, timeout=self.timeout)
             response.raise_for_status()
             html = response.text
 
@@ -481,7 +515,7 @@ class ContentExtractor:
             }
 
             try:
-                response = httpx.get(
+                response = self._http_get_with_ssl_fallback(
                     api_url,
                     timeout=self.timeout,
                     follow_redirects=True,
@@ -506,7 +540,7 @@ class ContentExtractor:
                 console.print(f"[dim]→ Lemmy API failed, falling back to HTML: {api_error}[/dim]")
 
             # Fallback to HTML scraping
-            response = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+            response = self._http_get_with_ssl_fallback(url, timeout=self.timeout, follow_redirects=True, headers=headers)
             response.raise_for_status()
 
             # Parse HTML
@@ -589,19 +623,19 @@ class ContentExtractor:
 
                 # If canonical differs from fetch_url, need to re-fetch
                 if fetch_url != canonical_url and url_type == "standard":
-                    response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                    response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                     response.raise_for_status()
                     html_content = response.text
             else:
                 # Non-Medium: standard fetch
-                response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
                 final_url = str(response.url)  # Capture final URL after redirects
 
             # If we don't have HTML yet, fetch it
             if not html_content:
-                response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
                 if not is_medium:
@@ -668,7 +702,7 @@ class ContentExtractor:
                 if initial_html:
                     html_content = initial_html
                 elif fetch_url != canonical_url and url_type == "standard":
-                    response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                    response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                     response.raise_for_status()
                     html_content = response.text
 
