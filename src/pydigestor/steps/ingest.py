@@ -103,22 +103,44 @@ class IngestStep:
                 max_retries=self.settings.content_max_retries,
             )
 
+            extraction_attempted = 0
+            extraction_succeeded = 0
+            extraction_failed = 0
+            extraction_skipped = 0
+
             for entry in all_entries:
                 # Extract if forced, or if content is empty/short
                 if force_extraction or not entry.content or len(entry.content) < 200:
+                    extraction_attempted += 1
                     content, resolved_url = extractor.extract(entry.url)
                     if content:
                         entry.content = content
                         entry.url = resolved_url  # Use resolved URL as source of truth
+                        extraction_succeeded += 1
+                    else:
+                        extraction_failed += 1
+                        # entry.content remains as it was (possibly None or short content from feed)
+                else:
+                    extraction_skipped += 1
 
             # Add extraction metrics to stats
             extraction_metrics = extractor.get_metrics()
             stats["extraction"] = extraction_metrics
+
+            # Show detailed extraction results
+            total_success = extraction_metrics['trafilatura_success'] + extraction_metrics['newspaper_success']
             console.print(
                 f"[green]✓[/green] Content extraction: {extraction_metrics['success_rate']}% success rate "
-                f"({extraction_metrics['trafilatura_success'] + extraction_metrics['newspaper_success']}"
-                f"/{extraction_metrics['total_attempts']})"
+                f"({total_success}/{extraction_metrics['total_attempts']} succeeded)"
             )
+            if extraction_skipped > 0:
+                console.print(
+                    f"[dim]  Skipped {extraction_skipped} article(s) already having content >= 200 chars from feed[/dim]"
+                )
+            if extraction_failed > 0:
+                console.print(
+                    f"[yellow]⚠[/yellow] {extraction_failed} article(s) failed extraction (no content will be stored)"
+                )
 
         # Store entries in database
         new_article_ids: list[UUID] = []
@@ -168,12 +190,16 @@ class IngestStep:
         if existing:
             return None  # Duplicate
 
+        # Normalize content: use None instead of empty string for consistency
+        # This ensures SQL queries work correctly
+        normalized_content = entry.content if entry.content and entry.content.strip() else None
+
         # Create new article
         article = Article(
             source_id=entry.source_id,
             url=entry.url,
             title=entry.title,
-            content=entry.content or "",
+            content=normalized_content,
             summary=entry.summary,
             published_at=entry.published_at,
             fetched_at=datetime.now(timezone.utc),
@@ -188,7 +214,12 @@ class IngestStep:
         session.commit()
         session.refresh(article)  # Get the generated ID
 
-        console.print(f"[green]✓[/green] Stored: {entry.title[:60]}...")
+        # Debug logging for content issues
+        if normalized_content:
+            content_preview = normalized_content[:80].replace('\n', ' ')
+            console.print(f"[green]✓[/green] Stored: {entry.title[:50]}... (content: {len(normalized_content)} chars)")
+        else:
+            console.print(f"[green]✓[/green] Stored: {entry.title[:50]}... [dim](no content)[/dim]")
 
         return article.id
 
