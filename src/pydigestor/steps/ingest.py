@@ -235,6 +235,17 @@ class IngestStep:
 
         console.print(f"\n[blue]Checking {len(article_ids)} new article(s) for summarization...[/blue]")
 
+        # Debug: First query all articles by ID to see their content status
+        all_articles = session.exec(
+            select(Article)
+            .where(Article.id.in_(article_ids))
+        ).all()
+
+        console.print(f"[dim]DEBUG: Found {len(all_articles)} articles by ID[/dim]")
+        for article in all_articles:
+            content_status = "NULL" if article.content is None else f"{len(article.content)} chars"
+            console.print(f"[dim]  {article.title[:40]}... content: {content_status}[/dim]")
+
         # Get articles with content that need summarization
         articles = session.exec(
             select(Article)
@@ -242,6 +253,8 @@ class IngestStep:
             .where(Article.content.is_not(None))
             .where((Article.summary.is_(None)) | (Article.summary == ""))
         ).all()
+
+        console.print(f"[dim]DEBUG: After filtering, {len(articles)} articles have content for summarization[/dim]")
 
         if not articles:
             console.print("[dim]No articles have content to summarize.[/dim]")
