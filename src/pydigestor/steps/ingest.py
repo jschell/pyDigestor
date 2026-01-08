@@ -244,7 +244,8 @@ class IngestStep:
         console.print(f"[dim]DEBUG: Found {len(all_articles)} articles by ID[/dim]")
         for article in all_articles:
             content_status = "NULL" if article.content is None else f"{len(article.content)} chars"
-            console.print(f"[dim]  {article.title[:40]}... content: {content_status}[/dim]")
+            summary_status = "has summary from feed" if (article.summary and article.summary.strip()) else "no summary"
+            console.print(f"[dim]  {article.title[:40]}... content: {content_status}, {summary_status}[/dim]")
 
         # Get articles with content that need summarization
         articles = session.exec(
@@ -254,10 +255,29 @@ class IngestStep:
             .where((Article.summary.is_(None)) | (Article.summary == ""))
         ).all()
 
-        console.print(f"[dim]DEBUG: After filtering, {len(articles)} articles have content for summarization[/dim]")
+        console.print(f"[dim]DEBUG: After filtering, {len(articles)} articles need summarization[/dim]")
 
         if not articles:
-            console.print("[dim]No articles have content to summarize.[/dim]")
+            # Calculate why articles were skipped
+            articles_with_existing_summary = 0
+            articles_without_content = 0
+
+            for article in all_articles:
+                if article.content is None:
+                    articles_without_content += 1
+                elif article.summary and article.summary.strip():
+                    articles_with_existing_summary += 1
+
+            if articles_with_existing_summary > 0:
+                console.print(
+                    f"[dim]All {articles_with_existing_summary} article(s) already have summaries from RSS feed.[/dim]"
+                )
+            elif articles_without_content > 0:
+                console.print(
+                    f"[dim]No articles have content to summarize ({articles_without_content} without content).[/dim]"
+                )
+            else:
+                console.print("[dim]No articles need summarization.[/dim]")
             return
 
         # Create summarizer and generate summaries
@@ -287,11 +307,9 @@ class IngestStep:
             )
 
         # Show breakdown if some were skipped
-        if skipped_too_short > 0 or len(articles) != len(article_ids):
-            skipped_no_content = len(article_ids) - len(articles)
+        if skipped_too_short > 0:
             console.print(
-                f"[dim]  Skipped: {skipped_no_content} without content, "
-                f"{skipped_too_short} too short (< {self.settings.summary_min_content_length} chars)[/dim]"
+                f"[dim]  Skipped: {skipped_too_short} too short (< {self.settings.summary_min_content_length} chars)[/dim]"
             )
 
     def _display_results(self, stats: dict) -> None:
