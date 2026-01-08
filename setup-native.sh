@@ -27,11 +27,17 @@ uv sync
 echo "==> Creating data directory..."
 mkdir -p data
 
-# Copy .env if not exists
+# Copy config files if they don't exist
 if [ ! -f .env ]; then
     echo "==> Creating .env from template..."
     cp .env.example .env
-    echo "Edit .env with your configuration if needed"
+    echo "Edit .env to add your secrets (API keys, database credentials)"
+fi
+
+if [ ! -f config.toml ]; then
+    echo "==> Creating config.toml from template..."
+    cp config.example.toml config.toml
+    echo "Edit config.toml to customize feeds and settings"
 fi
 
 # Run migrations

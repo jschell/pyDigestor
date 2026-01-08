@@ -423,17 +423,32 @@ config.toml
 
 ### User Experience
 
-**Initial setup:**
+**Initial setup (automatic - recommended):**
 ```bash
-# Copy templates
+# Simply run pydigestor - config files are auto-created from templates!
+uv run pydigestor status
+
+# Output:
+# ℹ️  Created .env from template (.env.example)
+# ℹ️  Created config.toml from template (config.example.toml)
+
+# Now edit the files with your settings
+nano .env          # Add DATABASE_URL, API keys
+nano config.toml   # Add feeds, adjust settings
+
+# Continue using
+uv run pydigestor ingest
+```
+
+**Initial setup (manual - optional):**
+```bash
+# Or copy templates manually if you prefer
 cp .env.example .env
 cp config.example.toml config.toml
 
-# Edit secrets
-nano .env  # Add DATABASE_URL, API keys
-
-# Edit configuration
-nano config.toml  # Add feeds, adjust settings
+# Edit secrets and configuration
+nano .env          # Add DATABASE_URL, API keys
+nano config.toml   # Add feeds, adjust settings
 
 # Run application
 uv run pydigestor ingest

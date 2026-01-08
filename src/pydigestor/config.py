@@ -168,8 +168,40 @@ class Settings(BaseSettings):
         4. Environment variables (via Pydantic)
         5. **kwargs passed to __init__
         """
-        # Load from config.toml first (if exists)
+        import sys
+        import shutil
+
+        # Auto-initialize config files from templates if they don't exist
+        env_path = Path(".env")
+        env_example_path = Path(".env.example")
         config_path = Path("config.toml")
+        config_example_path = Path("config.example.toml")
+
+        # Copy .env.example to .env if .env doesn't exist
+        if not env_path.exists() and env_example_path.exists():
+            try:
+                shutil.copy(env_example_path, env_path)
+                print(
+                    f"ℹ️  Created .env from template (.env.example). "
+                    f"Edit .env to add your secrets (API keys, database credentials).",
+                    file=sys.stderr,
+                )
+            except Exception as e:
+                print(f"Warning: Failed to copy .env.example to .env: {e}", file=sys.stderr)
+
+        # Copy config.example.toml to config.toml if config.toml doesn't exist
+        if not config_path.exists() and config_example_path.exists():
+            try:
+                shutil.copy(config_example_path, config_path)
+                print(
+                    f"ℹ️  Created config.toml from template (config.example.toml). "
+                    f"Edit config.toml to customize feeds and settings.",
+                    file=sys.stderr,
+                )
+            except Exception as e:
+                print(f"Warning: Failed to copy config.example.toml to config.toml: {e}", file=sys.stderr)
+
+        # Load from config.toml (now guaranteed to exist if template was available)
         toml_data = {}
 
         if config_path.exists():
@@ -182,7 +214,6 @@ class Settings(BaseSettings):
             except Exception as e:
                 # If TOML parsing fails, log warning but continue
                 # (allows fallback to .env and environment variables)
-                import sys
                 print(f"Warning: Failed to load config.toml: {e}", file=sys.stderr)
 
         # Merge TOML data with kwargs (kwargs take precedence)
