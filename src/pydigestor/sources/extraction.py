@@ -726,22 +726,11 @@ class ContentExtractor:
 
             # Try using pre-fetched HTML first
             if html_content:
-                try:
-                    article.set_html(html_content)
-                    article.parse()
-                except Exception as e:
-                    # If set_html fails (e.g., XML parsing issues with control characters),
-                    # fall back to letting newspaper3k download and sanitize the HTML itself
-                    if "XML compatible" in str(e) or "NULL byte" in str(e):
-                        console.print(f"[dim]→ HTML has encoding issues, letting newspaper3k download directly[/dim]")
-                        article.download()
-                        article.parse()
-                        if not is_medium and hasattr(article, 'url') and article.url:
-                            final_url = article.url
-                    else:
-                        raise
+                article.set_html(html_content)
+                article.parse()
             else:
-                # No pre-fetched HTML, let newspaper3k download it
+                # No pre-fetched HTML (pre-fetch failed), let newspaper3k download it
+                # This might succeed for sites without SSL issues
                 article.download()
                 article.parse()
                 if not is_medium and hasattr(article, 'url') and article.url:
