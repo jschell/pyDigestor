@@ -130,12 +130,18 @@ def ingest(
         "--force-extraction",
         "-f",
         help="Force content extraction even if content already exists"
+    ),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        "-d",
+        help="Show detailed debug information during ingestion"
     )
 ):
     """Fetch RSS/Atom feeds and store new articles in database."""
     try:
         step = IngestStep()
-        stats = step.run(force_extraction=force_extraction)
+        stats = step.run(force_extraction=force_extraction, debug=debug)
 
         # Exit with error if there were issues
         if stats["errors"] > 0 and stats["new_articles"] == 0:

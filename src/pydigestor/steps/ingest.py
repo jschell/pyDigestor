@@ -30,13 +30,14 @@ class IngestStep:
         """
         self.settings = settings or Settings()
 
-    def run(self, session: Optional[Session] = None, force_extraction: bool = False) -> dict:
+    def run(self, session: Optional[Session] = None, force_extraction: bool = False, debug: bool = False) -> dict:
         """
         Run the ingest step: fetch all configured RSS feeds and Reddit posts, then store new articles.
 
         Args:
             session: Optional database session (for testing). If not provided, creates a new session.
             force_extraction: Force content extraction even if content already exists.
+            debug: Show detailed debug information during ingestion.
 
         Returns:
             Dictionary with statistics:
@@ -160,7 +161,7 @@ class IngestStep:
 
                 # Auto-generate summaries for new articles if enabled
                 if self.settings.auto_summarize and new_article_ids:
-                    self._auto_summarize(db_session, new_article_ids)
+                    self._auto_summarize(db_session, new_article_ids, debug=debug)
 
             finally:
                 if should_close:
@@ -223,13 +224,14 @@ class IngestStep:
 
         return article.id
 
-    def _auto_summarize(self, session: Session, article_ids: list[UUID]) -> None:
+    def _auto_summarize(self, session: Session, article_ids: list[UUID], debug: bool = False) -> None:
         """
         Auto-generate summaries for newly ingested articles.
 
         Args:
             session: Database session
             article_ids: List of article IDs to summarize
+            debug: Show detailed debug information
         """
         from pydigestor.steps.summarize import SummarizationStep
 
@@ -241,11 +243,12 @@ class IngestStep:
             .where(Article.id.in_(article_ids))
         ).all()
 
-        console.print(f"[dim]DEBUG: Found {len(all_articles)} articles by ID[/dim]")
-        for article in all_articles:
-            content_status = "NULL" if article.content is None else f"{len(article.content)} chars"
-            summary_status = "has summary from feed" if (article.summary and article.summary.strip()) else "no summary"
-            console.print(f"[dim]  {article.title[:40]}... content: {content_status}, {summary_status}[/dim]")
+        if debug:
+            console.print(f"[dim]DEBUG: Found {len(all_articles)} articles by ID[/dim]")
+            for article in all_articles:
+                content_status = "NULL" if article.content is None else f"{len(article.content)} chars"
+                summary_status = "has summary from feed" if (article.summary and article.summary.strip()) else "no summary"
+                console.print(f"[dim]  {article.title[:40]}... content: {content_status}, {summary_status}[/dim]")
 
         # Get articles with content that need summarization
         articles = session.exec(
@@ -255,7 +258,8 @@ class IngestStep:
             .where((Article.summary.is_(None)) | (Article.summary == ""))
         ).all()
 
-        console.print(f"[dim]DEBUG: After filtering, {len(articles)} articles need summarization[/dim]")
+        if debug:
+            console.print(f"[dim]DEBUG: After filtering, {len(articles)} articles need summarization[/dim]")
 
         if not articles:
             # Calculate why articles were skipped
