@@ -641,9 +641,13 @@ class ContentExtractor:
                 if not is_medium:
                     final_url = str(response.url)  # Capture final URL after redirects
 
+            # Sanitize HTML to remove NULL bytes and control characters
+            # that can cause parsing issues in both trafilatura and newspaper3k
+            sanitized_html = self._sanitize_html(html_content)
+
             # Extract with trafilatura
             content = trafilatura.extract(
-                html_content.encode() if isinstance(html_content, str) else html_content,
+                sanitized_html.encode() if isinstance(sanitized_html, str) else sanitized_html,
                 include_comments=False,
                 include_tables=False,
                 no_fallback=False,
