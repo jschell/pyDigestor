@@ -1,7 +1,9 @@
 """Content extraction from URLs using trafilatura and newspaper3k."""
 
+import io
 import json
 import random
+import re
 import string
 import time
 import warnings
@@ -12,6 +14,7 @@ from urllib.parse import urlparse
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 import httpx
+import pdfplumber
 import trafilatura
 from bs4 import BeautifulSoup
 from newspaper import Article as NewspaperArticle
@@ -58,6 +61,40 @@ class ContentExtractor:
             "cached_failures": 0,
         }
 
+    def _http_get_with_ssl_fallback(self, url: str, **kwargs) -> httpx.Response:
+        """
+        Make HTTP GET request with SSL verification fallback.
+
+        First attempts with SSL verification enabled (secure).
+        If that fails with SSL error, retries with verification disabled.
+
+        Args:
+            url: URL to fetch
+            **kwargs: Additional arguments to pass to httpx.get
+
+        Returns:
+            httpx.Response object
+
+        Raises:
+            httpx.HTTPError: If request fails for reasons other than SSL
+        """
+        try:
+            # First attempt: normal request with SSL verification
+            return httpx.get(url, **kwargs)
+        except httpx.ConnectError as e:
+            # Check if it's an SSL error
+            if "SSL" in str(e) or "CERTIFICATE" in str(e):
+                console.print(f"[yellow]⚠[/yellow] SSL verification failed for {url[:50]}..., retrying without SSL verification")
+                # Retry without SSL verification
+                try:
+                    return httpx.get(url, verify=False, **kwargs)
+                except Exception as retry_error:
+                    console.print(f"[yellow]⚠[/yellow] Retry without SSL verification also failed: {retry_error}")
+                    raise
+            else:
+                # Not an SSL error, re-raise
+                raise
+
     def extract(self, url: str) -> tuple[Optional[str], str]:
         """
         Extract content from a URL.
@@ -88,6 +125,24 @@ class ContentExtractor:
                 self.metrics["failures"] += 1
                 return None, original_url
 
+        # Convert arXiv abstract URLs to PDF URLs
+        url = self._convert_arxiv_to_pdf(url)
+
+        # Check if this is a PDF URL
+        if self._is_pdf_url(url):
+            console.print(f"[dim]→ Detected PDF URL, attempting PDF extraction[/dim]")
+            content = self._extract_pdf(url)
+            if content:
+                self.metrics["total_attempts"] += 1
+                self.metrics["trafilatura_success"] += 1  # Count as success
+                return content, url
+            # PDF extraction failed, but don't try other methods on PDFs
+            self.failed_urls.add(original_url)
+            self.metrics["total_attempts"] += 1
+            self.metrics["failures"] += 1
+            console.print(f"[yellow]⚠[/yellow] Failed to extract PDF from {url[:60]}...")
+            return None, original_url
+
         self.metrics["total_attempts"] += 1
 
         # Try trafilatura first
@@ -109,6 +164,109 @@ class ContentExtractor:
         self.metrics["failures"] += 1
         console.print(f"[yellow]⚠[/yellow] Failed to extract content from {url[:60]}...")
         return None, original_url
+
+    def _is_pdf_url(self, url: str) -> bool:
+        """
+        Check if URL points to a PDF file.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL appears to be a PDF
+        """
+        return url.lower().endswith('.pdf') or '/pdf/' in url.lower()
+
+    def _convert_arxiv_to_pdf(self, url: str) -> str:
+        """
+        Convert arXiv abstract URL to PDF URL.
+
+        Args:
+            url: Original URL (may be abstract page)
+
+        Returns:
+            PDF URL if arXiv abstract, otherwise original URL
+
+        Examples:
+            https://arxiv.org/abs/2501.02496 -> https://arxiv.org/pdf/2501.02496.pdf
+        """
+        # Match arXiv abstract URLs
+        arxiv_pattern = r'https?://arxiv\.org/abs/(\d+\.\d+)'
+        match = re.match(arxiv_pattern, url)
+
+        if match:
+            paper_id = match.group(1)
+            pdf_url = f"https://arxiv.org/pdf/{paper_id}.pdf"
+            console.print(f"[dim]→ Converting arXiv abstract to PDF: {pdf_url}[/dim]")
+            return pdf_url
+
+        return url
+
+    def _extract_pdf(self, url: str) -> Optional[str]:
+        """
+        Download and extract text from a PDF URL.
+
+        Args:
+            url: URL of the PDF file
+
+        Returns:
+            Extracted text content or None if failed
+        """
+        try:
+            console.print(f"[blue]Downloading PDF:[/blue] {url[:60]}...")
+
+            # Download PDF
+            response = self._http_get_with_ssl_fallback(
+                url,
+                timeout=30,  # PDFs can be large
+                follow_redirects=True,
+                headers={"User-Agent": "pyDigestor/0.1.0"}
+            )
+            response.raise_for_status()
+
+            # Check if response is actually a PDF
+            content_type = response.headers.get('content-type', '').lower()
+            if 'pdf' not in content_type and not url.endswith('.pdf'):
+                console.print(f"[yellow]⚠[/yellow] Response is not a PDF (content-type: {content_type})")
+                return None
+
+            # Extract text from PDF
+            pdf_bytes = io.BytesIO(response.content)
+            text_parts = []
+
+            with pdfplumber.open(pdf_bytes) as pdf:
+                total_pages = len(pdf.pages)
+                console.print(f"[dim]→ Extracting text from {total_pages} pages[/dim]")
+
+                for page_num, page in enumerate(pdf.pages, 1):
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+
+                    # Show progress for large PDFs
+                    if page_num % 10 == 0:
+                        console.print(f"[dim]→ Processed {page_num}/{total_pages} pages[/dim]")
+
+            # Combine all pages
+            full_text = '\n'.join(text_parts)
+
+            # Validate extracted text
+            if len(full_text.strip()) < 500:
+                console.print(f"[yellow]⚠[/yellow] PDF extraction produced minimal text ({len(full_text)} chars)")
+                return None
+
+            console.print(f"[green]✓[/green] Extracted {len(full_text)} characters from PDF ({total_pages} pages)")
+            return full_text.strip()
+
+        except httpx.TimeoutException:
+            console.print(f"[yellow]⏱[/yellow] Timeout downloading PDF: {url[:60]}...")
+            return None
+        except httpx.HTTPError as e:
+            console.print(f"[yellow]HTTP error downloading PDF:[/yellow] {url[:60]}... - {e}")
+            return None
+        except Exception as e:
+            console.print(f"[yellow]Error extracting PDF:[/yellow] {url[:60]}... - {e}")
+            return None
 
     def _generate_medium_cookies(self) -> str:
         """
@@ -191,7 +349,7 @@ class ContentExtractor:
         """
         try:
             # Fetch with redirects to resolve /p/ URLs
-            response = httpx.get(url, headers=headers, follow_redirects=True, timeout=self.timeout)
+            response = self._http_get_with_ssl_fallback(url, headers=headers, follow_redirects=True, timeout=self.timeout)
             response.raise_for_status()
             html = response.text
 
@@ -357,7 +515,7 @@ class ContentExtractor:
             }
 
             try:
-                response = httpx.get(
+                response = self._http_get_with_ssl_fallback(
                     api_url,
                     timeout=self.timeout,
                     follow_redirects=True,
@@ -382,7 +540,7 @@ class ContentExtractor:
                 console.print(f"[dim]→ Lemmy API failed, falling back to HTML: {api_error}[/dim]")
 
             # Fallback to HTML scraping
-            response = httpx.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+            response = self._http_get_with_ssl_fallback(url, timeout=self.timeout, follow_redirects=True, headers=headers)
             response.raise_for_status()
 
             # Parse HTML
@@ -465,27 +623,31 @@ class ContentExtractor:
 
                 # If canonical differs from fetch_url, need to re-fetch
                 if fetch_url != canonical_url and url_type == "standard":
-                    response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                    response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                     response.raise_for_status()
                     html_content = response.text
             else:
                 # Non-Medium: standard fetch
-                response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
                 final_url = str(response.url)  # Capture final URL after redirects
 
             # If we don't have HTML yet, fetch it
             if not html_content:
-                response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                 response.raise_for_status()
                 html_content = response.text
                 if not is_medium:
                     final_url = str(response.url)  # Capture final URL after redirects
 
+            # Sanitize HTML to remove NULL bytes and control characters
+            # that can cause parsing issues in both trafilatura and newspaper3k
+            sanitized_html = self._sanitize_html(html_content)
+
             # Extract with trafilatura
             content = trafilatura.extract(
-                html_content.encode() if isinstance(html_content, str) else html_content,
+                sanitized_html.encode() if isinstance(sanitized_html, str) else sanitized_html,
                 include_comments=False,
                 include_tables=False,
                 no_fallback=False,
@@ -494,6 +656,12 @@ class ContentExtractor:
             # Validate content
             if content and len(content.strip()) > 100:
                 return content.strip(), final_url
+
+            # Debug: show why extraction failed
+            if content:
+                console.print(f"[dim]→ trafilatura extracted {len(content.strip())} chars (< 100, rejected)[/dim]")
+            else:
+                console.print(f"[dim]→ trafilatura returned no content[/dim]")
 
             return None, final_url
 
@@ -506,6 +674,35 @@ class ContentExtractor:
         except Exception as e:
             console.print(f"[yellow]Error (trafilatura):[/yellow] {url[:60]}... - {e}")
             return None, url
+
+    def _sanitize_html(self, html: str) -> str:
+        """
+        Sanitize HTML by removing NULL bytes and control characters.
+
+        newspaper3k's set_html() is strict about XML compatibility and rejects
+        HTML containing NULL bytes or control characters. This method removes
+        those problematic characters while preserving the content.
+
+        Args:
+            html: Raw HTML string
+
+        Returns:
+            Sanitized HTML string safe for newspaper3k
+        """
+        # Remove NULL bytes
+        html = html.replace('\x00', '')
+
+        # Remove other control characters (except newlines, tabs, carriage returns)
+        # Control characters are in the range 0x00-0x1F and 0x7F-0x9F
+        # Keep: \n (0x0A), \r (0x0D), \t (0x09)
+        cleaned = []
+        for char in html:
+            code = ord(char)
+            # Keep printable chars, newlines, tabs, carriage returns
+            if code >= 0x20 or char in '\n\r\t':
+                cleaned.append(char)
+
+        return ''.join(cleaned)
 
     def _extract_with_newspaper(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """
@@ -528,7 +725,7 @@ class ContentExtractor:
             fetch_url = url
             final_url = url
 
-            # Special handling for Medium URLs (same as trafilatura)
+            # Special handling for Medium URLs
             if is_medium:
                 # Resolve canonical URL
                 canonical_url, initial_html = self._resolve_medium_canonical(url, headers)
@@ -544,29 +741,52 @@ class ContentExtractor:
                 if initial_html:
                     html_content = initial_html
                 elif fetch_url != canonical_url and url_type == "standard":
-                    response = httpx.get(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                    response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
                     response.raise_for_status()
                     html_content = response.text
+                    final_url = str(response.url)
+
+            # For non-Medium URLs, pre-fetch HTML with SSL fallback
+            # This ensures newspaper3k benefits from our SSL error handling
+            if not html_content:
+                try:
+                    response = self._http_get_with_ssl_fallback(fetch_url, timeout=self.timeout, follow_redirects=True, headers=headers)
+                    response.raise_for_status()
+                    html_content = response.text
+                    final_url = str(response.url)
+                except Exception:
+                    # If pre-fetch fails, let newspaper3k try its own download
+                    html_content = None
 
             # Create article
             article = NewspaperArticle(fetch_url)
             article.config.browser_user_agent = headers["User-Agent"]
             article.config.request_timeout = self.timeout
 
-            # Use pre-fetched HTML or download
+            # Try using pre-fetched HTML first
             if html_content:
-                article.set_html(html_content)
+                # Sanitize HTML to remove NULL bytes and control characters
+                # that newspaper3k's XML parser rejects
+                sanitized_html = self._sanitize_html(html_content)
+                article.set_html(sanitized_html)
                 article.parse()
             else:
+                # No pre-fetched HTML (pre-fetch failed), let newspaper3k download it
+                # This might succeed for sites without SSL issues
                 article.download()
                 article.parse()
-                # For non-Medium URLs, try to get final URL from article
                 if not is_medium and hasattr(article, 'url') and article.url:
                     final_url = article.url
 
             # Validate content
             if article.text and len(article.text.strip()) > 100:
                 return article.text.strip(), final_url
+
+            # Debug: show why extraction failed
+            if article.text:
+                console.print(f"[dim]→ newspaper3k extracted {len(article.text.strip())} chars (< 100, rejected)[/dim]")
+            else:
+                console.print(f"[dim]→ newspaper3k returned no content[/dim]")
 
             return None, final_url
 

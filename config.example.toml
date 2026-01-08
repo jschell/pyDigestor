@@ -1,0 +1,74 @@
+# pyDigestor Configuration
+# Copy this file to config.toml and customize for your setup
+# Secrets (API keys, database credentials) go in .env instead
+
+[feeds]
+# RSS/Atom feed URLs
+rss_feeds = [
+    "https://krebsonsecurity.com/feed/",
+    "https://www.schneier.com/feed/atom/",
+]
+
+# Reddit subreddits to monitor
+reddit_subreddits = [
+    "netsec",
+    "blueteamsec",
+]
+
+[reddit]
+# Sorting and limits
+sort = "new"  # Options: new, hot, top, rising
+limit = 100   # Max posts to fetch per subreddit
+
+# Quality filters
+max_age_hours = 24     # Only process posts from last 24 hours
+min_score = 0          # Minimum upvotes required (0 for fresh content)
+min_comments = 0       # Minimum comments required
+
+# Blocked domains (won't process links from these sites)
+blocked_domains = [
+    "youtube.com",
+    "youtu.be",
+    "twitter.com",
+    "x.com",
+    "reddit.com",
+    "tiktok.com",
+    "instagram.com",
+]
+
+[summarization]
+# Auto-generate summaries during ingestion
+auto_summarize = true
+
+# Method: lexrank, textrank, or lsa
+method = "lexrank"
+
+# Content requirements
+min_content_length = 200  # Minimum chars to attempt summarization
+
+# Summary length
+min_sentences = 3
+max_sentences = 8
+compression_ratio = 0.20  # Target 20% of original length
+
+[extraction]
+# Enable pattern-based fast paths (GitHub, arXiv, PDFs)
+enable_pattern_extraction = true
+
+# HTTP settings
+fetch_timeout = 10  # Seconds
+max_retries = 2
+
+[features]
+# LLM-powered features (Phase 2 - requires API key in .env)
+enable_triage = false      # Claude-based article triage
+enable_extraction = false  # Claude-based signal extraction
+
+[llm]
+# Model selection (only used if features enabled)
+triage_model = "claude-3-haiku-20240307"
+extract_model = "claude-3-5-sonnet-20241022"
+
+[application]
+log_level = "INFO"  # DEBUG, INFO, WARNING, ERROR
+enable_debug = false

@@ -30,13 +30,14 @@ class IngestStep:
         """
         self.settings = settings or Settings()
 
-    def run(self, session: Optional[Session] = None, force_extraction: bool = False) -> dict:
+    def run(self, session: Optional[Session] = None, force_extraction: bool = False, debug: bool = False) -> dict:
         """
         Run the ingest step: fetch all configured RSS feeds and Reddit posts, then store new articles.
 
         Args:
             session: Optional database session (for testing). If not provided, creates a new session.
             force_extraction: Force content extraction even if content already exists.
+            debug: Show detailed debug information during ingestion.
 
         Returns:
             Dictionary with statistics:
@@ -103,22 +104,44 @@ class IngestStep:
                 max_retries=self.settings.content_max_retries,
             )
 
+            extraction_attempted = 0
+            extraction_succeeded = 0
+            extraction_failed = 0
+            extraction_skipped = 0
+
             for entry in all_entries:
                 # Extract if forced, or if content is empty/short
                 if force_extraction or not entry.content or len(entry.content) < 200:
+                    extraction_attempted += 1
                     content, resolved_url = extractor.extract(entry.url)
                     if content:
                         entry.content = content
                         entry.url = resolved_url  # Use resolved URL as source of truth
+                        extraction_succeeded += 1
+                    else:
+                        extraction_failed += 1
+                        # entry.content remains as it was (possibly None or short content from feed)
+                else:
+                    extraction_skipped += 1
 
             # Add extraction metrics to stats
             extraction_metrics = extractor.get_metrics()
             stats["extraction"] = extraction_metrics
+
+            # Show detailed extraction results
+            total_success = extraction_metrics['trafilatura_success'] + extraction_metrics['newspaper_success']
             console.print(
                 f"[green]✓[/green] Content extraction: {extraction_metrics['success_rate']}% success rate "
-                f"({extraction_metrics['trafilatura_success'] + extraction_metrics['newspaper_success']}"
-                f"/{extraction_metrics['total_attempts']})"
+                f"({total_success}/{extraction_metrics['total_attempts']} succeeded)"
             )
+            if extraction_skipped > 0:
+                console.print(
+                    f"[dim]  Skipped {extraction_skipped} article(s) already having content >= 200 chars from feed[/dim]"
+                )
+            if extraction_failed > 0:
+                console.print(
+                    f"[yellow]⚠[/yellow] {extraction_failed} article(s) failed extraction (no content will be stored)"
+                )
 
         # Store entries in database
         new_article_ids: list[UUID] = []
@@ -138,7 +161,7 @@ class IngestStep:
 
                 # Auto-generate summaries for new articles if enabled
                 if self.settings.auto_summarize and new_article_ids:
-                    self._auto_summarize(db_session, new_article_ids)
+                    self._auto_summarize(db_session, new_article_ids, debug=debug)
 
             finally:
                 if should_close:
@@ -168,12 +191,16 @@ class IngestStep:
         if existing:
             return None  # Duplicate
 
+        # Normalize content: use None instead of empty string for consistency
+        # This ensures SQL queries work correctly
+        normalized_content = entry.content if entry.content and entry.content.strip() else None
+
         # Create new article
         article = Article(
             source_id=entry.source_id,
             url=entry.url,
             title=entry.title,
-            content=entry.content or "",
+            content=normalized_content,
             summary=entry.summary,
             published_at=entry.published_at,
             fetched_at=datetime.now(timezone.utc),
@@ -188,21 +215,40 @@ class IngestStep:
         session.commit()
         session.refresh(article)  # Get the generated ID
 
-        console.print(f"[green]✓[/green] Stored: {entry.title[:60]}...")
+        # Debug logging for content issues
+        if normalized_content:
+            content_preview = normalized_content[:80].replace('\n', ' ')
+            console.print(f"[green]✓[/green] Stored: {entry.title[:50]}... (content: {len(normalized_content)} chars)")
+        else:
+            console.print(f"[green]✓[/green] Stored: {entry.title[:50]}... [dim](no content)[/dim]")
 
         return article.id
 
-    def _auto_summarize(self, session: Session, article_ids: list[UUID]) -> None:
+    def _auto_summarize(self, session: Session, article_ids: list[UUID], debug: bool = False) -> None:
         """
         Auto-generate summaries for newly ingested articles.
 
         Args:
             session: Database session
             article_ids: List of article IDs to summarize
+            debug: Show detailed debug information
         """
         from pydigestor.steps.summarize import SummarizationStep
 
-        console.print(f"\n[blue]Auto-summarizing {len(article_ids)} new article(s)...[/blue]")
+        console.print(f"\n[blue]Checking {len(article_ids)} new article(s) for summarization...[/blue]")
+
+        # Debug: First query all articles by ID to see their content status
+        all_articles = session.exec(
+            select(Article)
+            .where(Article.id.in_(article_ids))
+        ).all()
+
+        if debug:
+            console.print(f"[dim]DEBUG: Found {len(all_articles)} articles by ID[/dim]")
+            for article in all_articles:
+                content_status = "NULL" if article.content is None else f"{len(article.content)} chars"
+                summary_status = "has summary from feed" if (article.summary and article.summary.strip()) else "no summary"
+                console.print(f"[dim]  {article.title[:40]}... content: {content_status}, {summary_status}[/dim]")
 
         # Get articles with content that need summarization
         articles = session.exec(
@@ -212,17 +258,41 @@ class IngestStep:
             .where((Article.summary.is_(None)) | (Article.summary == ""))
         ).all()
 
+        if debug:
+            console.print(f"[dim]DEBUG: After filtering, {len(articles)} articles need summarization[/dim]")
+
         if not articles:
-            console.print("[dim]No articles need summarization.[/dim]")
+            # Calculate why articles were skipped
+            articles_with_existing_summary = 0
+            articles_without_content = 0
+
+            for article in all_articles:
+                if article.content is None:
+                    articles_without_content += 1
+                elif article.summary and article.summary.strip():
+                    articles_with_existing_summary += 1
+
+            if articles_with_existing_summary > 0:
+                console.print(
+                    f"[dim]All {articles_with_existing_summary} article(s) already have summaries from RSS feed.[/dim]"
+                )
+            elif articles_without_content > 0:
+                console.print(
+                    f"[dim]No articles have content to summarize ({articles_without_content} without content).[/dim]"
+                )
+            else:
+                console.print("[dim]No articles need summarization.[/dim]")
             return
 
         # Create summarizer and generate summaries
         summarizer = SummarizationStep()
         summarized_count = 0
+        skipped_too_short = 0
 
         for article in articles:
             # Skip if content is too short
             if len(article.content.strip()) < self.settings.summary_min_content_length:
+                skipped_too_short += 1
                 continue
 
             # Generate summary
@@ -238,6 +308,12 @@ class IngestStep:
         if summarized_count > 0:
             console.print(
                 f"[green]✓[/green] Auto-summarized {summarized_count} article(s)"
+            )
+
+        # Show breakdown if some were skipped
+        if skipped_too_short > 0:
+            console.print(
+                f"[dim]  Skipped: {skipped_too_short} too short (< {self.settings.summary_min_content_length} chars)[/dim]"
             )
 
     def _display_results(self, stats: dict) -> None:

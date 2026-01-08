@@ -13,4 +13,6 @@ services:
       - ../tests:/app/tests
       - ../alembic:/app/alembic
       - ../data:/app/data
+      # Mount host config files (allows editing from host)
+      - ../config.toml:/app/config.toml:ro
     command: tail -f /dev/null
