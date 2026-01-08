@@ -19,6 +19,10 @@ COPY tests ./tests
 COPY alembic ./alembic
 COPY alembic.ini .
 
+# Copy config templates for auto-initialization
+COPY .env.example .
+COPY config.example.toml .
+
 # Install dependencies with uv and clean cache to reduce image size
 RUN uv sync && rm -rf /root/.cache/uv
 
