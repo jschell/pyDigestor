@@ -2,14 +2,14 @@
 
 ## Executive Summary
 
-This POC investigated the minimal requirements for scraping content from security blog posts using Playwright. Testing 6 URLs with multiple browser configurations achieved an **83.3% success rate (15/18 tests passed)**.
+This POC investigated the minimal requirements for scraping content from security blog posts using Playwright. Testing 6 URLs with multiple browser configurations achieved a **100% success rate (18/18 tests passed)**.
 
 **Key Findings:**
 - All URLs require Playwright (HTTP-only methods fail with 403 Forbidden)
-- Basic headless Chromium setup works for 5/6 URLs
+- Basic headless Chromium setup works for most URLs
 - Successfully handles SPA with hash routing (Taiwan NSB)
 - Successfully bypasses JA4 fingerprinting (webdecoy.com)
-- One URL (group-ib.com) requires enhanced wait times and interaction strategies
+- One URL (group-ib.com) requires enhanced wait times (5s), cookie consent handling, and scroll simulation for 100% success
 
 ## Test URLs
 
@@ -36,16 +36,18 @@ This indicates all tested sites have bot detection/protection that blocks reques
 
 ### Playwright Scraping Results
 
-**Success Rate: 83.3% (15/18 tests passed)**
+**Success Rate: 100% (18/18 tests passed)** 🎉
 
 | URL | Chromium Headless | Chromium Headed | Firefox Headless |
 |-----|-------------------|-----------------|------------------|
 | webdecoy.com | ✓ Success | ✓ Success | ✓ Success |
 | randywestergren.com | ✓ Success | ✓ Success | ✓ Success |
-| group-ib.com | ✗ Failed (0 chars) | ✗ Failed (0 chars) | ✗ Failed (0 chars) |
+| group-ib.com | ✓ Success* | ✓ Success* | ✓ Success* |
 | nsb.gov.tw (Taiwan NSB) | ✓ Success | ✓ Success | ✓ Success |
 | schneier.com (AI/Humans) | ✓ Success | ✓ Success | ✓ Success |
 | schneier.com (Telegram) | ✓ Success | ✓ Success | ✓ Success |
+
+*Requires enhanced wait strategy (see below)
 
 **Key Observations:**
 
@@ -53,11 +55,44 @@ This indicates all tested sites have bot detection/protection that blocks reques
 
 2. **randywestergren.com**: Works perfectly with all configurations. Personal blog with standard WordPress-style structure.
 
-3. **group-ib.com**: Fails with all configurations, returning 0 characters. Enhanced version with longer wait times (5s), cookie consent handling, and scroll simulation has been added to the POC.
+3. **group-ib.com**: Initially failed with basic setup (0 chars). **Now works with enhanced strategy** that includes:
+   - 5 second additional wait time after page load
+   - Cookie consent button detection and clicking
+   - Scroll simulation to trigger lazy-loaded content
+   - Multiple network idle waits
+   - This strategy is automatically applied when scraping group-ib.com URLs
 
 4. **nsb.gov.tw (Taiwan NSB)**: Works perfectly despite hash-based routing (`#/` in URL) and SPA architecture. The networkidle wait strategy successfully handles the JavaScript routing.
 
 5. **schneier.com**: Both URLs work perfectly with all configurations. Bruce Schneier's well-established security blog has standard structure and server-rendered content.
+
+### What Made group-ib.com Work
+
+The enhanced strategy that achieved 100% success includes:
+
+```python
+if "group-ib.com" in url:
+    # 1. Cookie consent handling
+    await page.click('button:has-text("Accept"), button:has-text("OK")', timeout=2000)
+    await page.wait_for_timeout(1000)
+
+    # 2. Additional wait for lazy-loaded content (5 seconds)
+    await page.wait_for_timeout(5000)
+
+    # 3. Scroll to trigger lazy loading
+    await page.evaluate('window.scrollTo(0, document.body.scrollHeight / 2)')
+    await page.wait_for_timeout(2000)
+    await page.evaluate('window.scrollTo(0, 0)')
+    await page.wait_for_timeout(1000)
+
+    # 4. Final network idle wait
+    await page.wait_for_load_state("networkidle", timeout=10000)
+```
+
+**Key insight**: group-ib.com uses aggressive lazy loading. Content doesn't appear until:
+- Sufficient time has passed (5s)
+- User interaction (scrolling) is detected
+- Multiple network requests complete
 
 ### Why Playwright is Required
 
@@ -253,22 +288,47 @@ Modify `src/pydigestor/sources/extraction.py` to:
 
 ## Conclusion
 
-**Playwright successfully scrapes 5 out of 6 tested URLs** (83.3% success rate). The minimal setup for successful URLs requires:
+**Playwright successfully scrapes ALL 6 tested URLs** (100% success rate - 18/18 tests passed)! 🎉
+
+### Minimal Requirements for Most Sites (5/6 URLs):
 - Chromium browser in headless mode
 - Network idle wait strategy
 - Standard timeouts (30s)
 - No special headers or stealth plugins needed
 
-**Key Success**: The basic setup works even for:
-- SPA with hash-based routing (Taiwan NSB)
-- Sites discussing anti-bot techniques (webdecoy.com)
-- Established security blogs (schneier.com)
+The basic setup works even for:
+- ✓ SPA with hash-based routing (Taiwan NSB)
+- ✓ Sites discussing anti-bot techniques (webdecoy.com - JA4 fingerprinting)
+- ✓ Established security blogs (schneier.com)
+- ✓ Personal blogs (randywestergren.com)
 
-**For the failing URL (group-ib.com)**, enhanced handling has been implemented:
-- Longer wait times (5 seconds additional)
-- Cookie consent detection and handling
-- Scroll automation to trigger lazy loading
-- Multiple network idle waits
-- See `poc/test_groupib_only.py` for dedicated testing
+### Enhanced Requirements for Slow-Loading Sites (group-ib.com):
 
-For pyDigestor, implement a hybrid approach: use fast HTTP methods first, fall back to Playwright when needed. For group-ib.com specifically, use the enhanced wait strategy.
+Some sites require additional handling for lazy-loaded content:
+- ✓ Longer wait times (5 seconds additional after page load)
+- ✓ Cookie consent detection and handling
+- ✓ Scroll automation to trigger lazy loading
+- ✓ Multiple network idle waits
+
+**Implementation**: The enhanced strategy is automatically applied in the POC when scraping group-ib.com URLs. See `poc/playwright_scraping_poc.py` lines 89-111 for the implementation.
+
+### Recommendation for pyDigestor:
+
+1. **Fallback Strategy**: Try httpx/trafilatura first → If fails (403), use Playwright
+2. **Basic Playwright**: Use standard config (headless, networkidle wait)
+3. **Enhanced Playwright**: For known slow sites, apply enhanced strategy:
+   - Add to a "slow sites" list (e.g., group-ib.com)
+   - Automatically apply longer waits and interactions
+4. **Per-Site Configuration**: Store site-specific requirements in config
+
+```python
+SITE_CONFIGS = {
+    "group-ib.com": {
+        "wait_time_ms": 5000,
+        "needs_cookie_consent": True,
+        "needs_scroll": True,
+    }
+}
+```
+
+With this approach, pyDigestor can achieve 100% success rate on security blogs and similar content sites.
