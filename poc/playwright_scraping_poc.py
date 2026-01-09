@@ -91,6 +91,30 @@ class PlaywrightScrapingPOC:
                 # Wait for network to be idle
                 await page.wait_for_load_state("networkidle", timeout=config.wait_timeout)
 
+            # Special handling for group-ib.com (known to be slow/lazy-loading)
+            if "group-ib.com" in url:
+                # Try to click cookie consent if present
+                try:
+                    await page.click('button:has-text("Accept"), button:has-text("OK"), [class*="cookie"] button', timeout=2000)
+                    await page.wait_for_timeout(1000)
+                except Exception:
+                    pass  # No cookie banner or already accepted
+
+                # Additional wait time for lazy-loaded content
+                await page.wait_for_timeout(5000)
+
+                # Scroll to trigger lazy loading
+                await page.evaluate('window.scrollTo(0, document.body.scrollHeight / 2)')
+                await page.wait_for_timeout(2000)
+                await page.evaluate('window.scrollTo(0, 0)')
+                await page.wait_for_timeout(1000)
+
+                # Wait for network idle again after interactions
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    pass  # Continue even if timeout
+
             # Get page title
             result.title = await page.title()
 

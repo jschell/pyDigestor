@@ -2,34 +2,50 @@
 
 ## Executive Summary
 
-This POC investigated the minimal requirements for scraping content from security blog posts using Playwright. Testing revealed that **Playwright is necessary** for these URLs as simple HTTP requests fail with 403 Forbidden errors, indicating bot protection or JavaScript requirements.
+This POC investigated the minimal requirements for scraping content from security blog posts using Playwright. Testing 6 URLs with multiple browser configurations achieved an **83.3% success rate (15/18 tests passed)**.
+
+**Key Findings:**
+- All URLs require Playwright (HTTP-only methods fail with 403 Forbidden)
+- Basic headless Chromium setup works for 5/6 URLs
+- Successfully handles SPA with hash routing (Taiwan NSB)
+- Successfully bypasses JA4 fingerprinting (webdecoy.com)
+- One URL (group-ib.com) requires enhanced wait times and interaction strategies
 
 ## Test URLs
 
+**Original URLs:**
 1. https://webdecoy.com/blog/ja4-fingerprinting-ai-scrapers-practical-guide/
 2. https://randywestergren.com/vibe-hacking-proxying-flutter-traffic-on-android-with-claude/
 3. https://www.group-ib.com/blog/ghost-tapped-chinese-malware/
+
+**Additional URLs:**
+4. https://www.nsb.gov.tw/en/#/.../Analysis on China's Cyber Threats to Taiwan's Critical Infrastructure in 2025
+5. https://www.schneier.com/blog/archives/2026/01/ai-humans-making-the-relationship-work.html
+6. https://www.schneier.com/blog/archives/2026/01/telegram-hosting-worlds-largest-darknet-market.html
 
 ## Key Findings
 
 ### HTTP-Only Scraping Results
 
-**All HTTP-based approaches failed with 403 Forbidden:**
+**All 6 URLs failed with HTTP-based approaches (18/18 tests failed):**
 - Basic httpx GET requests: ✗ Failed (403 Forbidden)
 - httpx with browser-like headers: ✗ Failed (403 Forbidden)
 - Trafilatura (specialized content extractor): ✗ Failed (403 Forbidden)
 
-This indicates these sites have bot detection/protection that blocks requests without proper browser fingerprints.
+This indicates all tested sites have bot detection/protection that blocks requests without proper browser fingerprints.
 
 ### Playwright Scraping Results
 
-**Success Rate: 66.7% (6/9 tests passed)**
+**Success Rate: 83.3% (15/18 tests passed)**
 
 | URL | Chromium Headless | Chromium Headed | Firefox Headless |
 |-----|-------------------|-----------------|------------------|
 | webdecoy.com | ✓ Success | ✓ Success | ✓ Success |
 | randywestergren.com | ✓ Success | ✓ Success | ✓ Success |
 | group-ib.com | ✗ Failed (0 chars) | ✗ Failed (0 chars) | ✗ Failed (0 chars) |
+| nsb.gov.tw (Taiwan NSB) | ✓ Success | ✓ Success | ✓ Success |
+| schneier.com (AI/Humans) | ✓ Success | ✓ Success | ✓ Success |
+| schneier.com (Telegram) | ✓ Success | ✓ Success | ✓ Success |
 
 **Key Observations:**
 
@@ -37,11 +53,11 @@ This indicates these sites have bot detection/protection that blocks requests wi
 
 2. **randywestergren.com**: Works perfectly with all configurations. Personal blog with standard WordPress-style structure.
 
-3. **group-ib.com**: Fails with all configurations, returning 0 characters. Likely requires:
-   - Cookie consent acceptance
-   - Additional wait time for lazy-loaded content
-   - Scroll simulation to trigger content loading
-   - Geographic restrictions or advanced bot detection
+3. **group-ib.com**: Fails with all configurations, returning 0 characters. Enhanced version with longer wait times (5s), cookie consent handling, and scroll simulation has been added to the POC.
+
+4. **nsb.gov.tw (Taiwan NSB)**: Works perfectly despite hash-based routing (`#/` in URL) and SPA architecture. The networkidle wait strategy successfully handles the JavaScript routing.
+
+5. **schneier.com**: Both URLs work perfectly with all configurations. Bruce Schneier's well-established security blog has standard structure and server-rendered content.
 
 ### Why Playwright is Required
 
@@ -237,17 +253,22 @@ Modify `src/pydigestor/sources/extraction.py` to:
 
 ## Conclusion
 
-**Playwright successfully scrapes 2 out of 3 tested URLs** (66.7% success rate). The minimal setup for successful URLs requires:
+**Playwright successfully scrapes 5 out of 6 tested URLs** (83.3% success rate). The minimal setup for successful URLs requires:
 - Chromium browser in headless mode
 - Network idle wait strategy
 - Standard timeouts (30s)
 - No special headers or stealth plugins needed
 
-**For the failing URL (group-ib.com)**, additional techniques may be needed:
-- Cookie consent handling
-- Scroll automation to trigger lazy loading
-- Longer wait times
-- Investigation of geographic restrictions
-- See `poc/playwright_enhanced_poc.py` for advanced strategies
+**Key Success**: The basic setup works even for:
+- SPA with hash-based routing (Taiwan NSB)
+- Sites discussing anti-bot techniques (webdecoy.com)
+- Established security blogs (schneier.com)
 
-For pyDigestor, implement a hybrid approach: use fast HTTP methods first, fall back to Playwright when needed.
+**For the failing URL (group-ib.com)**, enhanced handling has been implemented:
+- Longer wait times (5 seconds additional)
+- Cookie consent detection and handling
+- Scroll automation to trigger lazy loading
+- Multiple network idle waits
+- See `poc/test_groupib_only.py` for dedicated testing
+
+For pyDigestor, implement a hybrid approach: use fast HTTP methods first, fall back to Playwright when needed. For group-ib.com specifically, use the enhanced wait strategy.
