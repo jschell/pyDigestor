@@ -15,14 +15,33 @@ This POC investigated the minimal requirements for scraping content from securit
 ### HTTP-Only Scraping Results
 
 **All HTTP-based approaches failed with 403 Forbidden:**
-- Basic httpx GET requests: ✗ Failed
-- httpx with browser-like headers: ✗ Failed
-- Trafilatura (specialized content extractor): ✗ Failed
+- Basic httpx GET requests: ✗ Failed (403 Forbidden)
+- httpx with browser-like headers: ✗ Failed (403 Forbidden)
+- Trafilatura (specialized content extractor): ✗ Failed (403 Forbidden)
 
-This indicates these sites have:
-1. **Bot detection/protection** - Blocking requests without proper browser fingerprints
-2. **JavaScript requirements** - Content may be dynamically loaded
-3. **Advanced fingerprinting** - As suggested by the first URL's topic (JA4 fingerprinting)
+This indicates these sites have bot detection/protection that blocks requests without proper browser fingerprints.
+
+### Playwright Scraping Results
+
+**Success Rate: 66.7% (6/9 tests passed)**
+
+| URL | Chromium Headless | Chromium Headed | Firefox Headless |
+|-----|-------------------|-----------------|------------------|
+| webdecoy.com | ✓ Success | ✓ Success | ✓ Success |
+| randywestergren.com | ✓ Success | ✓ Success | ✓ Success |
+| group-ib.com | ✗ Failed (0 chars) | ✗ Failed (0 chars) | ✗ Failed (0 chars) |
+
+**Key Observations:**
+
+1. **webdecoy.com**: Works perfectly with all configurations despite being an article about JA4 fingerprinting AI scrapers! Ironically, Playwright bypasses the very detection methods discussed in the article.
+
+2. **randywestergren.com**: Works perfectly with all configurations. Personal blog with standard WordPress-style structure.
+
+3. **group-ib.com**: Fails with all configurations, returning 0 characters. Likely requires:
+   - Cookie consent acceptance
+   - Additional wait time for lazy-loaded content
+   - Scroll simulation to trigger content loading
+   - Geographic restrictions or advanced bot detection
 
 ### Why Playwright is Required
 
@@ -218,9 +237,17 @@ Modify `src/pydigestor/sources/extraction.py` to:
 
 ## Conclusion
 
-**Playwright is necessary** for the tested URLs due to bot protection. The minimal setup requires:
+**Playwright successfully scrapes 2 out of 3 tested URLs** (66.7% success rate). The minimal setup for successful URLs requires:
 - Chromium browser in headless mode
 - Network idle wait strategy
 - Standard timeouts (30s)
+- No special headers or stealth plugins needed
+
+**For the failing URL (group-ib.com)**, additional techniques may be needed:
+- Cookie consent handling
+- Scroll automation to trigger lazy loading
+- Longer wait times
+- Investigation of geographic restrictions
+- See `poc/playwright_enhanced_poc.py` for advanced strategies
 
 For pyDigestor, implement a hybrid approach: use fast HTTP methods first, fall back to Playwright when needed.
