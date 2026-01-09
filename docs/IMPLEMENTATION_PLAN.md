@@ -71,6 +71,9 @@ pyDigestor/
 │   ├── feed sources.md
 │   ├── readme.md
 │   └── IMPLEMENTATION_PLAN.md  # This file
+├── poc/                        # ✅ Proof of concepts
+│   ├── IMPLEMENTATION_GUIDE.md # Playwright integration guide
+│   └── ...                     # Other POC scripts and findings
 ├── src/
 │   └── pydigestor/
 │       ├── __init__.py
@@ -279,6 +282,8 @@ def test_duplicate_detection(db_session):
 ---
 
 #### **Day 5: Basic Content Extraction**
+
+> **📝 Note**: For enhanced content extraction with Playwright support (handles bot-protected sites, JavaScript-heavy content), see the **[Playwright Implementation Guide](../poc/IMPLEMENTATION_GUIDE.md)**. The basic HTTP-based extraction below works for ~80% of sites, while Playwright achieves 100% success on tested security blogs.
 
 **Goals**:
 - ✅ Extract article content from URLs
@@ -1108,6 +1113,20 @@ SUMMARIZATION_METHOD=lexrank
 ---
 
 ## Future Enhancements (Post-Phase 3)
+
+### Recommended: Playwright Content Extraction
+**Priority**: High (improves success rate from ~80% to 100%)
+
+See **[poc/IMPLEMENTATION_GUIDE.md](../poc/IMPLEMENTATION_GUIDE.md)** for complete integration plan.
+
+**Benefits**:
+- ✓ Handles bot-protected sites (bypasses 403 Forbidden errors)
+- ✓ Extracts JavaScript-heavy content (SPAs, React sites)
+- ✓ Adaptive wait strategy (no per-site configuration needed)
+- ✓ 100% success rate on tested security blogs
+- ✓ Graceful fallback from fast HTTP extraction
+
+**Implementation**: 3-week plan with backward compatibility and gradual rollout strategy.
 
 ### Optional Features
 - Web dashboard (FastAPI + React)
