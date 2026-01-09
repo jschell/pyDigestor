@@ -46,6 +46,9 @@ uv run python poc/playwright_scraping_poc.py
 # Run HTTP-only comparison to see which URLs need Playwright
 uv run python poc/httpx_scraping_comparison.py
 
+# NEW: Adaptive strategy (no hardcoded per-site config)
+uv run python poc/playwright_adaptive_poc.py
+
 # Quick test: Just the 3 new URLs with basic config
 uv run python poc/test_new_urls_only.py
 
@@ -69,6 +72,34 @@ The POC will determine:
 - What wait strategies are needed
 - Whether special configuration (user agents, stealth plugins) is required
 
+## Adaptive Wait Strategy (NEW!)
+
+The POC includes an **adaptive wait strategy** that eliminates the need for hardcoded per-site configuration.
+
+### Key Features:
+- ✓ **Zero configuration** - No need to maintain per-site wait times
+- ✓ **Progressive backoff** - Automatically increases wait time if content not found
+- ✓ **Fast path optimization** - Returns immediately for responsive sites
+- ✓ **Self-tuning** - Adapts to site behavior automatically
+
+### How It Works:
+1. **Attempt 1**: Basic (0s extra) - Works for 83% of sites
+2. **Attempt 2**: +2s + cookie consent - Catches sites with banners
+3. **Attempt 3**: +4s + scroll trigger - Handles lazy loading
+4. **Attempt 4**: +6s + full enhancement - Slowest sites
+
+Stops as soon as content is found - no wasted time!
+
+### Usage:
+```python
+from adaptive_wait_strategy import AdaptiveContentScraper, BALANCED_STRATEGY
+
+scraper = AdaptiveContentScraper(BALANCED_STRATEGY)
+content, attempts, metadata = await scraper.scrape_with_adaptive_wait(page, selectors)
+```
+
+See `ADAPTIVE_STRATEGY.md` for full documentation and examples.
+
 ## Next Steps
 
-Based on the POC results, integrate successful approaches into the main pyDigestor extraction pipeline.
+Based on the POC results, integrate successful approaches into the main pyDigestor extraction pipeline. Consider using the adaptive wait strategy for production deployment.
