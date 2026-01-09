@@ -4,10 +4,19 @@ This proof of concept tests the minimal requirements for web scraping using Play
 
 ## Objective
 
-Determine what configuration is needed to successfully scrape content from various websites, including:
+Determine what configuration is needed to successfully scrape content from various websites.
+
+### Test URLs (6 total)
+
+**Original URLs:**
 - https://webdecoy.com/blog/ja4-fingerprinting-ai-scrapers-practical-guide/
 - https://randywestergren.com/vibe-hacking-proxying-flutter-traffic-on-android-with-claude/
 - https://www.group-ib.com/blog/ghost-tapped-chinese-malware/
+
+**Additional URLs:**
+- https://www.nsb.gov.tw/en/#/... (Taiwan NSB cyber threats report)
+- https://www.schneier.com/blog/archives/2026/01/ai-humans-making-the-relationship-work.html
+- https://www.schneier.com/blog/archives/2026/01/telegram-hosting-worlds-largest-darknet-market.html
 
 ## What It Tests
 
@@ -31,8 +40,17 @@ uv run playwright install
 ## Running the POC
 
 ```bash
-# Run the POC script
+# Run the full POC script (all 6 URLs, multiple browser configs)
 uv run python poc/playwright_scraping_poc.py
+
+# Run HTTP-only comparison to see which URLs need Playwright
+uv run python poc/httpx_scraping_comparison.py
+
+# Quick test: Just the 3 new URLs with basic config
+uv run python poc/test_new_urls_only.py
+
+# Enhanced debugging for difficult URLs
+uv run python poc/playwright_enhanced_poc.py
 ```
 
 ## Output

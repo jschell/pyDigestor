@@ -49,9 +49,14 @@ class PlaywrightScrapingPOC:
     """POC for testing Playwright scraping capabilities"""
 
     TARGET_URLS = [
+        # Original test URLs
         "https://webdecoy.com/blog/ja4-fingerprinting-ai-scrapers-practical-guide/",
         "https://randywestergren.com/vibe-hacking-proxying-flutter-traffic-on-android-with-claude/",
         "https://www.group-ib.com/blog/ghost-tapped-chinese-malware/",
+        # Additional test URLs
+        "https://www.nsb.gov.tw/en/#/%E5%85%AC%E5%91%8A%E8%B3%87%E8%A8%8A/%E6%96%B0%E8%81%9E%E7%A8%BF%E6%9A%A8%E6%96%B0%E8%81%9E%E5%8F%83%E8%80%83%E8%B3%87%E6%96%99/2026-01-04/Analysis%20on%20China%E2%80%99s%20Cyber%20Threats%20to%20Taiwan%E2%80%99s%20Critical%20Infrastructure%20in%202025",
+        "https://www.schneier.com/blog/archives/2026/01/ai-humans-making-the-relationship-work.html",
+        "https://www.schneier.com/blog/archives/2026/01/telegram-hosting-worlds-largest-darknet-market.html",
     ]
 
     def __init__(self):
