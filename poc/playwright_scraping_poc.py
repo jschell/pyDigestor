@@ -313,6 +313,85 @@ class PlaywrightScrapingPOC:
             print("  - Cookie acceptance automation")
             print("  - Longer wait times")
 
+        # Add timing performance summary
+        print("\n" + "=" * 80)
+        print("PERFORMANCE TIMING")
+        print("=" * 80)
+        print()
+
+        # Get average timing per URL (using headless chromium for consistency)
+        timing_data = []
+        for url in self.TARGET_URLS:
+            url_results = [r for r in self.results if r.url == url and "chromium_headless=True" in r.method and r.success]
+            if url_results:
+                avg_time = sum(r.duration_ms for r in url_results) / len(url_results)
+                avg_content = sum(r.content_length for r in url_results) / len(url_results)
+
+                # Get short name for display
+                if "webdecoy.com" in url:
+                    short_name = "webdecoy.com"
+                elif "randywestergren.com" in url:
+                    short_name = "randywestergren.com"
+                elif "group-ib.com" in url:
+                    short_name = "group-ib.com"
+                elif "nsb.gov.tw" in url:
+                    short_name = "nsb.gov.tw (Taiwan NSB)"
+                elif "schneier.com" in url and "ai-humans" in url:
+                    short_name = "schneier.com (AI/Humans)"
+                elif "schneier.com" in url and "telegram" in url:
+                    short_name = "schneier.com (Telegram)"
+                else:
+                    short_name = url[:30] + "..."
+
+                timing_data.append({
+                    'name': short_name,
+                    'time_ms': avg_time,
+                    'time_s': avg_time / 1000,
+                    'content': avg_content,
+                    'enhanced': "group-ib.com" in url
+                })
+
+        if timing_data:
+            # Sort by time
+            timing_data.sort(key=lambda x: x['time_ms'])
+
+            print("Average scraping time by URL (Chromium headless):")
+            print("-" * 80)
+            print(f"{'URL':<35} {'Time':<12} {'Content':<15} {'Strategy':<15}")
+            print("-" * 80)
+
+            for data in timing_data:
+                strategy = "Enhanced" if data['enhanced'] else "Basic"
+                time_str = f"{data['time_s']:.2f}s"
+                content_str = f"{int(data['content']):,} chars"
+                marker = "⚡" if data['time_s'] < 5 else "⏱️" if data['time_s'] < 10 else "🐌"
+                print(f"{marker} {data['name']:<33} {time_str:<12} {content_str:<15} {strategy:<15}")
+
+            print("-" * 80)
+            avg_all = sum(d['time_s'] for d in timing_data) / len(timing_data)
+            print(f"{'Average (all URLs)':<35} {avg_all:.2f}s")
+
+            basic_times = [d['time_s'] for d in timing_data if not d['enhanced']]
+            if basic_times:
+                avg_basic = sum(basic_times) / len(basic_times)
+                print(f"{'Average (basic strategy)':<35} {avg_basic:.2f}s")
+
+            enhanced_times = [d['time_s'] for d in timing_data if d['enhanced']]
+            if enhanced_times:
+                avg_enhanced = sum(enhanced_times) / len(enhanced_times)
+                print(f"{'Average (enhanced strategy)':<35} {avg_enhanced:.2f}s")
+
+            print()
+            print("Legend:")
+            print("  ⚡ Fast (<5s)    ⏱️ Moderate (5-10s)    🐌 Slow (>10s)")
+            print()
+
+            if enhanced_times:
+                overhead = enhanced_times[0] - (sum(basic_times) / len(basic_times) if basic_times else 0)
+                print(f"Enhanced strategy overhead: ~{overhead:.1f}s (worth it for 100% success!)")
+        else:
+            print("No timing data available (no successful headless chromium tests)")
+
 
 async def main():
     """Run the POC"""
