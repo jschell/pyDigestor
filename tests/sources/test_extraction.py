@@ -418,3 +418,158 @@ class TestContentExtractor:
         assert "Academic paper" in content
         assert final_url == "https://arxiv.org/pdf/2501.12345.pdf"
         assert extractor.metrics["trafilatura_success"] == 1
+
+    def test_pattern_registry_initialization(self):
+        """Test that pattern registry is initialized with default patterns."""
+        extractor = ContentExtractor()
+
+        assert extractor.registry is not None
+        assert len(extractor.registry.patterns) > 0
+
+        # Check that PDF and GitHub patterns are registered
+        pattern_names = [p.name for p in extractor.registry.patterns]
+        assert "pdf" in pattern_names
+        assert "github" in pattern_names
+
+    def test_pattern_registry_matching(self):
+        """Test pattern registry matching for different URLs."""
+        extractor = ContentExtractor()
+
+        # Test GitHub pattern matching
+        github_match = extractor.registry.get_handler("https://github.com/user/repo")
+        assert github_match is not None
+        assert github_match[0] == "github"
+
+        # Test PDF pattern matching
+        pdf_match = extractor.registry.get_handler("https://example.com/document.pdf")
+        assert pdf_match is not None
+        assert pdf_match[0] == "pdf"
+
+        # Test no match
+        no_match = extractor.registry.get_handler("https://example.com/article")
+        assert no_match is None
+
+    def test_pattern_priority(self):
+        """Test that patterns are checked by priority order."""
+        extractor = ContentExtractor()
+
+        # PDF pattern has priority 10, should be checked first
+        patterns = extractor.registry.patterns
+        pdf_pattern = next(p for p in patterns if p.name == "pdf")
+        github_pattern = next(p for p in patterns if p.name == "github")
+
+        assert pdf_pattern.priority == 10
+        assert github_pattern.priority == 5
+
+        # Verify sorted by priority
+        priorities = [p.priority for p in patterns]
+        assert priorities == sorted(priorities, reverse=True)
+
+    @patch("pydigestor.sources.extraction.httpx.get")
+    def test_extract_github_readme(self, mock_get):
+        """Test GitHub README extraction."""
+        # Mock HTML response with README content
+        github_html = """
+        <html>
+            <article class="markdown-body">
+                <h1>My Project</h1>
+                <p>This is a detailed README with lots of information about the project.
+                It includes installation instructions, usage examples, and other relevant details
+                that make it long enough to pass the 100 character minimum validation.</p>
+            </article>
+        </html>
+        """
+        mock_response = Mock()
+        mock_response.text = github_html
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        extractor = ContentExtractor()
+        content, resolved_url = extractor.extract("https://github.com/user/repo")
+
+        assert content is not None
+        assert len(content) > 100
+        assert "My Project" in content
+        assert "README" in content or "detailed" in content
+        assert resolved_url == "https://github.com/user/repo"
+        assert extractor.metrics["pattern_extractions"]["github"] == 1
+
+    @patch("pydigestor.sources.extraction.httpx.get")
+    def test_extract_github_issue(self, mock_get):
+        """Test GitHub issue extraction."""
+        github_html = """
+        <html>
+            <h1 class="gh-header-title">Bug: Application crashes on startup</h1>
+            <td class="comment-body">
+                <p>When I try to start the application, it immediately crashes with a segmentation fault.
+                This happens on both Linux and macOS. Steps to reproduce: 1. Install the app 2. Run ./app 3. Observe crash.
+                This is a critical bug that needs immediate attention as it prevents all users from using the application.</p>
+            </td>
+        </html>
+        """
+        mock_response = Mock()
+        mock_response.text = github_html
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        extractor = ContentExtractor()
+        content, resolved_url = extractor.extract("https://github.com/user/repo/issues/123")
+
+        assert content is not None
+        assert len(content) > 100
+        assert "Bug: Application crashes" in content
+        assert "segmentation fault" in content
+        assert extractor.metrics["pattern_extractions"]["github"] == 1
+
+    @patch("pydigestor.sources.extraction.httpx.get")
+    @patch("pydigestor.sources.extraction.trafilatura.extract")
+    def test_github_pattern_fallback_to_generic(self, mock_trafilatura, mock_get):
+        """Test that GitHub pattern falls back to generic extraction if content is insufficient."""
+        # Mock GitHub HTML with minimal content (< 100 chars)
+        github_html = "<html><article class='markdown-body'>Short</article></html>"
+        mock_response = Mock()
+        mock_response.text = github_html
+        mock_response.raise_for_status = Mock()
+        mock_response.url = "https://github.com/user/repo"
+        mock_get.return_value = mock_response
+
+        # Mock trafilatura to return sufficient content
+        mock_trafilatura.return_value = "This is generic extracted content from trafilatura that is long enough to pass validation and be returned as the final result for the extraction process."
+
+        extractor = ContentExtractor()
+        content, resolved_url = extractor.extract("https://github.com/user/repo")
+
+        # Should fall back to trafilatura and succeed
+        assert content is not None
+        assert "generic extracted content" in content
+        assert extractor.metrics["trafilatura_success"] == 1
+
+    def test_metrics_track_pattern_usage(self):
+        """Test that metrics correctly track pattern extraction usage."""
+        extractor = ContentExtractor()
+
+        # Initially no pattern extractions
+        assert extractor.metrics["pattern_extractions"] == {}
+
+        # After a GitHub extraction
+        with patch("pydigestor.sources.extraction.httpx.get") as mock_get:
+            github_html = """
+            <html>
+                <article class="markdown-body">
+                    <h1>Test Project</h1>
+                    <p>This is a test README with enough content to pass validation.
+                    It contains various sections including installation, usage, and examples.
+                    The content is detailed enough to be useful for understanding the project.</p>
+                </article>
+            </html>
+            """
+            mock_response = Mock()
+            mock_response.text = github_html
+            mock_response.raise_for_status = Mock()
+            mock_get.return_value = mock_response
+
+            extractor.extract("https://github.com/user/repo")
+
+            # Should track GitHub pattern usage
+            assert "github" in extractor.metrics["pattern_extractions"]
+            assert extractor.metrics["pattern_extractions"]["github"] == 1

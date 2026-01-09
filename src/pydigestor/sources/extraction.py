@@ -7,7 +7,8 @@ import re
 import string
 import time
 import warnings
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Callable, Optional, Tuple
 from urllib.parse import urlparse
 
 # Suppress SyntaxWarnings from newspaper3k library (must be before import)
@@ -32,6 +33,49 @@ LEMMY_INSTANCES = [
     "programming.dev",
     "sh.itjust.works",
 ]
+
+
+@dataclass
+class ExtractionPattern:
+    """Pattern definition for site-specific extraction."""
+    name: str
+    domains: list[str]  # Domain patterns to match
+    handler: Callable  # Extraction function
+    priority: int = 0  # Higher = checked first
+
+    def matches(self, url: str) -> bool:
+        """Check if pattern matches URL."""
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace("www.", "")
+
+        for pattern in self.domains:
+            if pattern in domain or pattern in url.lower():
+                return True
+        return False
+
+
+class PatternRegistry:
+    """Registry of extraction patterns for known sites."""
+
+    def __init__(self):
+        self.patterns: list[ExtractionPattern] = []
+
+    def register(self, pattern: ExtractionPattern):
+        """Add pattern to registry."""
+        self.patterns.append(pattern)
+        # Keep sorted by priority
+        self.patterns.sort(key=lambda p: p.priority, reverse=True)
+
+    def get_handler(self, url: str) -> Optional[tuple[str, Callable]]:
+        """Find matching handler for URL.
+
+        Returns:
+            Tuple of (pattern_name, handler) or None if no match
+        """
+        for pattern in self.patterns:
+            if pattern.matches(url):
+                return pattern.name, pattern.handler
+        return None
 
 
 class ContentExtractor:
@@ -59,7 +103,29 @@ class ContentExtractor:
             "newspaper_success": 0,
             "failures": 0,
             "cached_failures": 0,
+            "pattern_extractions": {},  # Track pattern-based extractions
         }
+        self.registry = PatternRegistry()
+        self._register_patterns()
+
+    def _register_patterns(self):
+        """Register all extraction patterns."""
+
+        # Priority 10: File types (check first)
+        self.registry.register(ExtractionPattern(
+            name="pdf",
+            domains=[".pdf", "/pdf/"],
+            handler=self._extract_pdf_pattern,
+            priority=10
+        ))
+
+        # Priority 5: Specific sites (high confidence)
+        self.registry.register(ExtractionPattern(
+            name="github",
+            domains=["github.com"],
+            handler=self._extract_github,
+            priority=5
+        ))
 
     def _http_get_with_ssl_fallback(self, url: str, **kwargs) -> httpx.Response:
         """
@@ -95,6 +161,107 @@ class ContentExtractor:
                 # Not an SSL error, re-raise
                 raise
 
+    def _extract_pdf_pattern(self, url: str) -> Optional[str]:
+        """
+        Wrapper for PDF extraction to match pattern handler signature.
+
+        Args:
+            url: PDF URL to extract from
+
+        Returns:
+            Extracted text content or None if failed
+        """
+        return self._extract_pdf(url)
+
+    def _extract_github(self, url: str) -> Optional[str]:
+        """
+        Extract content from GitHub URLs (READMEs, releases, issues, discussions).
+
+        GitHub URLs are handled specially:
+        - Repository URLs: Extract README content
+        - Release pages: Extract release notes
+        - Issue/PR pages: Extract issue/PR content with comments
+        - Discussion pages: Extract discussion content
+
+        Args:
+            url: GitHub URL to extract from
+
+        Returns:
+            Extracted text content or None if failed
+        """
+        try:
+            console.print(f"[dim]→ Using GitHub pattern extractor[/dim]")
+
+            # Fetch the HTML
+            headers = {
+                "User-Agent": "pyDigestor/0.1.0",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            }
+            response = self._http_get_with_ssl_fallback(
+                url,
+                timeout=self.timeout,
+                follow_redirects=True,
+                headers=headers
+            )
+            response.raise_for_status()
+            html = response.text
+
+            # Use BeautifulSoup to extract main content
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Extract based on URL type
+            parsed = urlparse(url)
+            path_parts = parsed.path.split("/")
+
+            content_parts = []
+
+            # Repository main page or file view
+            if len(path_parts) >= 3:
+                # Try to extract README content (appears in article.markdown-body)
+                readme = soup.find("article", class_="markdown-body")
+                if readme:
+                    console.print(f"[dim]→ Found README content[/dim]")
+                    content_parts.append(readme.get_text(separator="\n", strip=True))
+
+                # Try to extract from main content area
+                main_content = soup.find("div", {"id": "readme"})
+                if main_content and not content_parts:
+                    console.print(f"[dim]→ Found main README div[/dim]")
+                    content_parts.append(main_content.get_text(separator="\n", strip=True))
+
+                # For issues/PRs: extract title and body
+                issue_title = soup.find("h1", class_="gh-header-title")
+                if issue_title:
+                    console.print(f"[dim]→ Found issue/PR title[/dim]")
+                    content_parts.append(f"# {issue_title.get_text(strip=True)}")
+
+                # Issue/PR body
+                issue_body = soup.find("td", class_="comment-body")
+                if issue_body:
+                    console.print(f"[dim]→ Found issue/PR body[/dim]")
+                    content_parts.append(issue_body.get_text(separator="\n", strip=True))
+
+                # Release notes
+                release_body = soup.find("div", class_="markdown-body")
+                if release_body and "releases" in url:
+                    console.print(f"[dim]→ Found release notes[/dim]")
+                    content_parts.append(release_body.get_text(separator="\n", strip=True))
+
+            # Combine all extracted parts
+            if content_parts:
+                combined = "\n\n".join(content_parts)
+                if len(combined.strip()) > 100:
+                    console.print(f"[green]✓[/green] GitHub extraction: {len(combined)} chars")
+                    return combined.strip()
+
+            # Fallback to generic extraction if GitHub-specific extraction failed
+            console.print(f"[dim]→ GitHub pattern extraction yielded insufficient content, falling back[/dim]")
+            return None
+
+        except Exception as e:
+            console.print(f"[yellow]GitHub extraction error:[/yellow] {e}")
+            return None
+
     def extract(self, url: str) -> tuple[Optional[str], str]:
         """
         Extract content from a URL.
@@ -128,7 +295,29 @@ class ContentExtractor:
         # Convert arXiv abstract URLs to PDF URLs
         url = self._convert_arxiv_to_pdf(url)
 
-        # Check if this is a PDF URL
+        # Try pattern-based extraction first
+        pattern_match = self.registry.get_handler(url)
+        if pattern_match:
+            pattern_name, handler = pattern_match
+            console.print(f"[dim]→ Matched pattern: {pattern_name}[/dim]")
+            try:
+                content = handler(url)
+                if content and len(content.strip()) > 100:
+                    # Pattern extraction succeeded
+                    self.metrics["total_attempts"] += 1
+                    self.metrics["trafilatura_success"] += 1  # Count as success
+                    # Track pattern usage
+                    if pattern_name not in self.metrics["pattern_extractions"]:
+                        self.metrics["pattern_extractions"][pattern_name] = 0
+                    self.metrics["pattern_extractions"][pattern_name] += 1
+                    return content, url
+                else:
+                    console.print(f"[dim]→ Pattern extraction yielded insufficient content, falling back[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]Pattern handler error ({pattern_name}):[/yellow] {e}")
+                # Continue to generic extraction
+
+        # Check if this is a PDF URL (legacy check for PDFs not caught by pattern)
         if self._is_pdf_url(url):
             console.print(f"[dim]→ Detected PDF URL, attempting PDF extraction[/dim]")
             content = self._extract_pdf(url)
