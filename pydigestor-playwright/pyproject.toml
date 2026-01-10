@@ -1,0 +1,68 @@
+[project]
+name = "pydigestor-playwright"
+version = "0.1.0"
+description = "Playwright plugin for pyDigestor - enables JavaScript-heavy site extraction"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "pyDigestor Team"}
+]
+keywords = ["pydigestor", "plugin", "playwright", "web-scraping", "extraction"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "pydigestor>=0.1.0",
+    "playwright>=1.40.0",
+]
+
+[project.entry-points.pydigestor]
+playwright = "pydigestor_playwright"
+
+[project.urls]
+Homepage = "https://github.com/jschell/pyDigestor"
+Issues = "https://github.com/jschell/pyDigestor/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-playwright>=0.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v -s --strict-markers"
+markers = [
+    "integration: integration tests requiring network access",
+    "unit: unit tests (fast, no network)",
+]
+
+[tool.coverage.run]
+source = ["pydigestor_playwright"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

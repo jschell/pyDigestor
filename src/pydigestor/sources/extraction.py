@@ -107,6 +107,7 @@ class ContentExtractor:
         }
         self.registry = PatternRegistry()
         self._register_patterns()
+        self._load_plugins()
 
     def _register_patterns(self):
         """Register all extraction patterns."""
@@ -126,6 +127,25 @@ class ContentExtractor:
             handler=self._extract_github,
             priority=5
         ))
+
+    def _load_plugins(self):
+        """Load and initialize plugins."""
+        try:
+            from ..plugins import pm, load_plugins
+
+            # Load plugins from entry points (only once)
+            if not hasattr(pm, '_plugins_loaded'):
+                load_plugins()
+                pm._plugins_loaded = True
+
+            # Call register_extractors hook
+            pm.hook.register_extractors(registry=self.registry)
+        except ImportError:
+            # Plugin system not available (shouldn't happen in normal install)
+            pass
+        except Exception as e:
+            # Non-fatal: plugins are optional
+            console.print(f"[yellow]⚠ Plugin initialization warning: {e}[/yellow]")
 
     def _http_get_with_ssl_fallback(self, url: str, **kwargs) -> httpx.Response:
         """
