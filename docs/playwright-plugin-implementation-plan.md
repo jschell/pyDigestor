@@ -300,6 +300,48 @@ custom = "my_custom_extractor"
 
 ---
 
+## Configuration Integration
+
+This plugin implementation works alongside the **single-file configuration system** documented in [`single-file-config-implementation.md`](./single-file-config-implementation.md).
+
+### How They Work Together
+
+**Plugin registers defaults**:
+```python
+# pydigestor_playwright/__init__.py
+@hookimpl
+def register_extractors(registry):
+    registry.register(ExtractionPattern(
+        name="playwright",
+        domains=["wsj.com", "twitter.com"],  # Default domains
+        handler=extractor.extract,
+        priority=8
+    ))
+```
+
+**User can override in config**:
+```toml
+# ~/.config/pydigestor/extractors.toml
+[extraction.sites."twitter.com"]
+method = "newspaper"  # Override plugin default
+```
+
+### Implementation Coordination
+
+**Recommended order**:
+1. **First**: Implement plugin infrastructure (this plan) - enables plugin ecosystem
+2. **Then**: Implement configuration system (parallel track, see linked doc)
+3. **Result**: Plugins provide defaults, config allows user overrides
+
+**Dependencies**:
+- Plugin system works **without** config (uses registered patterns)
+- Config system works **without** plugins (uses built-in extractors)
+- Together: Maximum flexibility
+
+**See**: [`single-file-config-implementation.md`](./single-file-config-implementation.md) for complete configuration implementation details.
+
+---
+
 ## Implementation Order
 
 **Week 1**:
